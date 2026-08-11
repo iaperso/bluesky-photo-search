@@ -2,8 +2,8 @@ import type { Metadata } from 'next'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Recherche photos publiques',
-  description: 'Recherche de photos publiques à partir de mots-clés.'
+  title: 'Recherche visuelle',
+  description: 'Recherche visuelle'
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
