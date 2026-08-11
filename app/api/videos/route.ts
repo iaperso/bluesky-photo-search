@@ -5,6 +5,9 @@ type SearchResult = { posts: AnyObject[]; cursor: string | null; hitsTotal: numb
 
 const HOSTS = ['https://public.api.bsky.app', 'https://api.bsky.app']
 const ADULT_LABELS = new Set(['porn', 'sexual'])
+const REQUEST_TIMEOUT_MS = 4500
+const TARGET_RESULTS = 10
+const MAX_SCANS = 3
 
 function hasAdultLabel(post: AnyObject) {
   return (Array.isArray(post.labels) && post.labels.some((label: AnyObject) => !label?.neg && ADULT_LABELS.has(String(label?.val ?? '').toLowerCase()))) ||
@@ -26,23 +29,33 @@ function extractVideo(embed: AnyObject | undefined) {
   }
 }
 
-function hashtagSearches(q: string) {
+function searchVariants(q: string) {
   const variants = new Set<string>([q])
   for (const raw of q.split(/\s+/)) {
     if (!raw || raw.startsWith('@') || raw.includes('://')) continue
     const word = raw.replace(/^#+/, '').replace(/[^\p{L}\p{N}_]/gu, '').trim()
     if (word) variants.add(`#${word}`)
+    if (variants.size >= 4) break
   }
   return [...variants]
 }
 
 async function searchRemote(params: URLSearchParams) {
   for (const host of HOSTS) {
-    const response = await fetch(`${host}/xrpc/app.bsky.feed.searchPosts?${params.toString()}`, {
-      headers: { Accept: 'application/json', 'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)' },
-      cache: 'no-store'
-    })
-    if (response.ok) return await response.json()
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+    try {
+      const response = await fetch(`${host}/xrpc/app.bsky.feed.searchPosts?${params.toString()}`, {
+        headers: { Accept: 'application/json', 'User-Agent': 'VisualMediaSearch/1.0' },
+        cache: 'no-store',
+        signal: controller.signal
+      })
+      if (response.ok) return await response.json()
+    } catch {
+      // Try the fallback host.
+    } finally {
+      clearTimeout(timer)
+    }
   }
   return null
 }
@@ -57,16 +70,20 @@ export async function GET(request: NextRequest) {
   const posts: AnyObject[] = []
   const seenUris = new Set<string>()
   const seenPlaylists = new Set<string>()
+  const variants = searchVariants(q)
 
-  for (let scan = 0; scan < 6; scan += 1) {
-    const pages = await Promise.all(hashtagSearches(q).map(async searchQuery => {
+  for (let scan = 0; scan < MAX_SCANS; scan += 1) {
+    const pages = await Promise.all(variants.map(async searchQuery => {
       const params = new URLSearchParams({ q: searchQuery, sort: 'latest', limit: '100' })
       if (until) params.set('until', until)
       return searchRemote(params)
     }))
 
     const successful = pages.filter(Boolean)
-    if (!successful.length) return NextResponse.json({ error: 'distante' }, { status: 502 })
+    if (!successful.length) {
+      if (posts.length) break
+      return NextResponse.json({ error: 'distante' }, { status: 502 })
+    }
 
     let boundary: string | null = null
     for (const data of successful) {
@@ -94,8 +111,11 @@ export async function GET(request: NextRequest) {
 
     cursor = boundary
     until = boundary
-    if (posts.length >= 18 || !boundary) break
+    if (posts.length >= TARGET_RESULTS || !boundary) break
   }
 
-  return NextResponse.json({ posts, cursor, hitsTotal: null } satisfies SearchResult)
+  return NextResponse.json(
+    { posts, cursor, hitsTotal: null } satisfies SearchResult,
+    { headers: { 'Cache-Control': 'public, s-maxage=20, stale-while-revalidate=60' } }
+  )
 }
