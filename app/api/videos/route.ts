@@ -15,9 +15,10 @@ function extractVideo(embed: AnyObject | undefined) {
   if (!embed) return null
   const source = embed.media ?? embed
   if (!source.playlist) return null
+  const playlist = source.playlist as string
   return {
-    playlist: source.playlist as string,
-    thumbnail: typeof source.thumbnail === 'string' ? source.thumbnail : null,
+    playlist,
+    thumbnail: typeof source.thumbnail === 'string' ? source.thumbnail : playlist.replace(/playlist\.m3u8(?:\?.*)?$/, 'thumbnail.jpg'),
     alt: '',
     aspectRatio: source.aspectRatio && typeof source.aspectRatio.width === 'number' && typeof source.aspectRatio.height === 'number'
       ? { width: source.aspectRatio.width, height: source.aspectRatio.height }
@@ -54,7 +55,8 @@ export async function GET(request: NextRequest) {
   let until = requestedCursor && !Number.isNaN(Date.parse(requestedCursor)) ? requestedCursor : null
   let cursor: string | null = null
   const posts: AnyObject[] = []
-  const seen = new Set<string>()
+  const seenUris = new Set<string>()
+  const seenPlaylists = new Set<string>()
 
   for (let scan = 0; scan < 6; scan += 1) {
     const pages = await Promise.all(hashtagSearches(q).map(async searchQuery => {
@@ -71,11 +73,12 @@ export async function GET(request: NextRequest) {
       const rawPosts: AnyObject[] = Array.isArray(data.posts) ? data.posts : []
       for (const post of rawPosts) {
         const indexed = post.indexedAt ?? post.record?.createdAt
-        if (typeof indexed === 'string' && (!boundary || Date.parse(indexed) > Date.parse(boundary))) boundary = indexed
-        if (!hasAdultLabel(post) || seen.has(post.uri)) continue
+        if (typeof indexed === 'string' && !Number.isNaN(Date.parse(indexed)) && (!boundary || Date.parse(indexed) < Date.parse(boundary))) boundary = indexed
+        if (!hasAdultLabel(post) || seenUris.has(post.uri)) continue
         const video = extractVideo(post.embed)
-        if (!video) continue
-        seen.add(post.uri)
+        if (!video || seenPlaylists.has(video.playlist)) continue
+        seenUris.add(post.uri)
+        seenPlaylists.add(video.playlist)
         posts.push({
           uri: post.uri,
           cid: post.cid,
@@ -91,7 +94,7 @@ export async function GET(request: NextRequest) {
 
     cursor = boundary
     until = boundary
-    if (posts.length >= 12 || !boundary) break
+    if (posts.length >= 18 || !boundary) break
   }
 
   return NextResponse.json({ posts, cursor, hitsTotal: null } satisfies SearchResult)
