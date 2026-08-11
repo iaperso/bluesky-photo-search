@@ -38,10 +38,7 @@ function hashtagSearches(q: string) {
 async function searchRemote(params: URLSearchParams) {
   for (const host of HOSTS) {
     const response = await fetch(`${host}/xrpc/app.bsky.feed.searchPosts?${params.toString()}`, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)'
-      },
+      headers: { Accept: 'application/json', 'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)' },
       cache: 'no-store'
     })
     if (response.ok) return await response.json()
@@ -86,8 +83,8 @@ export async function GET(request: NextRequest) {
           createdAt: post.record?.createdAt ?? post.indexedAt,
           author: { handle: 'auteur', displayName: 'auteur', avatar: null },
           video,
-          likeCount: 0,
-          repostCount: 0
+          likeCount: post.likeCount ?? 0,
+          repostCount: post.repostCount ?? 0
         })
       }
     }
