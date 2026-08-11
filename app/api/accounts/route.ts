@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 type AnyObject = Record<string, any>
-
 type CursorMap = Record<string, string | null>
 
 const HOSTS = ['https://public.api.bsky.app', 'https://api.bsky.app']
@@ -27,11 +26,9 @@ function hasAdultLabel(post: AnyObject) {
   const serviceLabels = Array.isArray(post.labels)
     ? post.labels.some((label: AnyObject) => !label?.neg && ADULT_LABELS.has(String(label?.val ?? '').toLowerCase()))
     : false
-
   const selfLabels = Array.isArray(post.record?.labels?.values)
     ? post.record.labels.values.some((label: AnyObject) => ADULT_LABELS.has(String(label?.val ?? '').toLowerCase()))
     : false
-
   return serviceLabels || selfLabels
 }
 
@@ -62,10 +59,29 @@ function extractImages(embed: AnyObject | undefined) {
   return []
 }
 
+function extractVideo(embed: AnyObject | undefined) {
+  if (!embed) return null
+  const source = embed.media ?? embed
+  const type = String(source.$type ?? '')
+  if (!type.includes('app.bsky.embed.video') && !source.playlist) return null
+  if (!source.playlist) return null
+
+  return {
+    playlist: source.playlist as string,
+    thumbnail: typeof source.thumbnail === 'string' ? source.thumbnail : null,
+    alt: cleanVisibleText(source.alt),
+    aspectRatio: source.aspectRatio && typeof source.aspectRatio.width === 'number' && typeof source.aspectRatio.height === 'number'
+      ? { width: source.aspectRatio.width, height: source.aspectRatio.height }
+      : null
+  }
+}
+
 function normalizePost(post: AnyObject) {
   if (!hasAdultLabel(post)) return null
+
   const images = extractImages(post.embed)
-  if (!images.length) return null
+  const video = extractVideo(post.embed)
+  if (!images.length && !video) return null
 
   const rawHandle = post.author?.handle ?? post.author?.did ?? 'auteur'
   const handle = cleanHandle(rawHandle)
@@ -83,6 +99,7 @@ function normalizePost(post: AnyObject) {
       avatar: post.author?.avatar ?? null
     },
     images,
+    video,
     likeCount: post.likeCount ?? 0,
     repostCount: post.repostCount ?? 0
   }
@@ -103,7 +120,6 @@ async function xrpc(path: string, params: URLSearchParams) {
     })
 
     if (response.ok) return { data: await response.json(), status: 200, details: '' }
-
     lastStatus = response.status
     lastDetails = await response.text()
     if (response.status !== 403 && response.status !== 429 && response.status < 500) break
