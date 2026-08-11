@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import './age-gate.css'
 
 export const metadata: Metadata = {
   title: 'Recherche visuelle',
