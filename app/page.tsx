@@ -21,8 +21,10 @@ type SearchResponse = {
 }
 
 type DisplayImage = { key: string; photo: Photo }
+type Mode = 'search' | 'accounts'
 
 const AGE_KEY = 'visual-search-adult-confirmed'
+const ACCOUNTS_KEY = 'visual-search-accounts'
 
 function shuffle<T>(items: T[]) {
   const copy = [...items]
@@ -56,6 +58,7 @@ function randomizedImages(posts: Post[]) {
 export default function Home() {
   const [query, setQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('')
+  const [mode, setMode] = useState<Mode>('search')
   const [posts, setPosts] = useState<Post[]>([])
   const [displayImages, setDisplayImages] = useState<DisplayImage[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
@@ -81,7 +84,7 @@ export default function Home() {
     setAdultConfirmed(true)
   }
 
-  async function runSearch(nextQuery: string, nextCursor?: string | null, append = false) {
+  async function runSearch(nextQuery: string, nextCursor?: string | null, append = false, nextMode: Mode = mode) {
     const cleaned = nextQuery.trim()
     if (!cleaned || loading) return
 
@@ -89,10 +92,15 @@ export default function Home() {
     setFailed(false)
 
     try {
-      const params = new URLSearchParams({ q: cleaned, sort: 'latest', mode: 'adult' })
+      const endpoint = nextMode === 'accounts' ? '/api/accounts' : '/api/search'
+      const params = new URLSearchParams({ q: cleaned })
+      if (nextMode === 'search') {
+        params.set('sort', 'latest')
+        params.set('mode', 'adult')
+      }
       if (nextCursor) params.set('cursor', nextCursor)
 
-      const response = await fetch(`/api/search?${params.toString()}`)
+      const response = await fetch(`${endpoint}?${params.toString()}`)
       const data: SearchResponse = await response.json()
       if (!response.ok) throw new Error(data.error || 'search')
 
@@ -103,6 +111,10 @@ export default function Home() {
       setDisplayImages(randomizedImages(deduplicated))
       setCursor(data.cursor)
       setActiveQuery(cleaned)
+
+      if (nextMode === 'accounts') {
+        try { window.localStorage.setItem(ACCOUNTS_KEY, cleaned) } catch {}
+      }
     } catch {
       setFailed(true)
       if (!append) {
@@ -118,6 +130,25 @@ export default function Home() {
   function submit(event: FormEvent) {
     event.preventDefault()
     runSearch(query)
+  }
+
+  function switchMode(nextMode: Mode) {
+    if (nextMode === mode || loading) return
+    setMode(nextMode)
+    setPosts([])
+    setDisplayImages([])
+    setCursor(null)
+    setActiveQuery('')
+    setFailed(false)
+
+    if (nextMode === 'accounts') {
+      let saved = ''
+      try { saved = window.localStorage.getItem(ACCOUNTS_KEY) ?? '' } catch {}
+      setQuery(saved)
+      if (saved.trim()) setTimeout(() => runSearch(saved, null, false, 'accounts'), 0)
+    } else {
+      setQuery('')
+    }
   }
 
   return (
@@ -138,10 +169,32 @@ export default function Home() {
       <section className="hero">
         <div className="topLine">
           <div className="eyebrow">Recherche visuelle</div>
-          <div className="modeTabs" aria-hidden="true">
-            <button className="active adultTab" type="button" tabIndex={-1}>
-              <svg viewBox="0 0 24 24">
+          <div className="modeTabs" role="tablist" aria-label="Mode">
+            <button
+              className={mode === 'search' ? 'active adultTab' : 'adultTab'}
+              type="button"
+              role="tab"
+              aria-selected={mode === 'search'}
+              aria-label="Recherche"
+              onClick={() => switchMode('search')}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M13.7 2.8c.4 3.2-1.2 4.6-2.5 6.2-1.1 1.4-2 2.7-1.2 4.6.5 1.1 1.4 1.8 2.5 2.1-.1-2.1 1-3.4 2.5-4.9 2.2 1.8 3.8 4 3.8 6.6A6.7 6.7 0 0 1 12 24a6.8 6.8 0 0 1-6.8-6.7c0-4.8 3.5-7.5 5.6-10.2 1.1-1.4 2-2.7 2.9-4.3Z" />
+              </svg>
+            </button>
+            <button
+              className={mode === 'accounts' ? 'active accountsTab' : 'accountsTab'}
+              type="button"
+              role="tab"
+              aria-selected={mode === 'accounts'}
+              aria-label="Comptes"
+              onClick={() => switchMode('accounts')}
+            >
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="9" cy="8" r="3.2" />
+                <path d="M3.8 18.5c.7-3 2.5-4.7 5.2-4.7s4.5 1.7 5.2 4.7" />
+                <circle cx="17" cy="9" r="2.4" />
+                <path d="M14.8 14.2c2.8-.6 4.8.7 5.4 3.3" />
               </svg>
             </button>
           </div>
@@ -151,8 +204,8 @@ export default function Home() {
           <input
             value={query}
             onChange={event => setQuery(event.target.value)}
-            placeholder="Rechercher…"
-            aria-label="Recherche"
+            placeholder={mode === 'accounts' ? '@comptes…' : 'Rechercher…'}
+            aria-label={mode === 'accounts' ? 'Comptes' : 'Recherche'}
             autoComplete="off"
             spellCheck={false}
           />
@@ -160,7 +213,7 @@ export default function Home() {
             className={loading ? 'loading' : ''}
             type="submit"
             disabled={loading || !query.trim()}
-            aria-label="Lancer la recherche"
+            aria-label="Lancer"
           >
             <span className="searchGlyph" aria-hidden="true" />
           </button>
