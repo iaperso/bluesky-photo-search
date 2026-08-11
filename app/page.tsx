@@ -26,7 +26,7 @@ type SearchResponse = {
 const EXAMPLES = ['chat roux à poils longs', 'aurores boréales', 'voiture ancienne', 'street photography']
 
 function safeName(value: string) {
-  return value.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'bluesky-photo'
+  return value.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '').slice(0, 70) || 'photo'
 }
 
 function extension(contentType: string | null) {
@@ -126,7 +126,7 @@ export default function Home() {
       const href = URL.createObjectURL(archive)
       const anchor = document.createElement('a')
       anchor.href = href
-      anchor.download = `${safeName(activeQuery)}-bluesky.zip`
+      anchor.download = `${safeName(activeQuery)}-photos.zip`
       anchor.click()
       URL.revokeObjectURL(href)
     } catch {
@@ -139,9 +139,9 @@ export default function Home() {
   return (
     <main>
       <section className="hero">
-        <div className="eyebrow">Recherche visuelle sur Bluesky</div>
-        <h1>Retrouve les photos<br />qui circulent sur Bluesky.</h1>
-        <p className="intro">Tape des mots-clés. L’application parcourt les publications publiques correspondantes et ne conserve que celles qui contiennent des images.</p>
+        <div className="eyebrow">Recherche visuelle</div>
+        <h1>Retrouve les photos<br />partagées publiquement.</h1>
+        <p className="intro">Tape des mots-clés. L’application parcourt des publications publiques correspondantes et ne conserve que celles qui contiennent des images.</p>
 
         <form className="search" onSubmit={submit}>
           <span className="searchIcon" aria-hidden="true">⌕</span>
@@ -168,7 +168,7 @@ export default function Home() {
             <div>
               <div className="resultTitle">{activeQuery ? `“${activeQuery}”` : 'Résultats'}</div>
               <div className="resultMeta">
-                {loading && !posts.length ? 'Recherche en cours…' : `${posts.length} posts · ${imageCount} photos${hitsTotal ? ` · ${hitsTotal.toLocaleString('fr-FR')} résultats Bluesky` : ''}`}
+                {loading && !posts.length ? 'Recherche en cours…' : `${posts.length} publications · ${imageCount} photos${hitsTotal ? ` · ${hitsTotal.toLocaleString('fr-FR')} résultats` : ''}`}
               </div>
             </div>
             <div className="actions">
@@ -192,7 +192,7 @@ export default function Home() {
             {posts.flatMap(post => post.images.map((photo, index) => (
               <article className="card" key={`${post.uri}-${index}`}>
                 <a className="imageWrap" href={post.postUrl} target="_blank" rel="noreferrer">
-                  <img src={photo.thumb || photo.fullsize} alt={photo.alt || post.text || 'Photo Bluesky'} loading="lazy" />
+                  <img src={photo.thumb || photo.fullsize} alt={photo.alt || post.text || 'Photo'} loading="lazy" />
                   {post.images.length > 1 && <span className="count">{index + 1}/{post.images.length}</span>}
                 </a>
                 <div className="cardBody">
@@ -204,7 +204,7 @@ export default function Home() {
                   {post.text && <p className="caption">{post.text}</p>}
                   <div className="cardFooter">
                     <span>{new Date(post.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                    <a href={post.postUrl} target="_blank" rel="noreferrer">Voir sur Bluesky ↗</a>
+                    <a href={post.postUrl} target="_blank" rel="noreferrer">Voir la publication ↗</a>
                   </div>
                 </div>
               </article>
@@ -221,7 +221,7 @@ export default function Home() {
         </section>
       )}
 
-      <footer>Données issues de publications publiques Bluesky · Aucune connexion requise</footer>
+      <footer>Photos issues de publications publiques · Aucune connexion requise</footer>
     </main>
   )
 }
