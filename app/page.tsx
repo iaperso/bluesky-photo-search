@@ -1,15 +1,23 @@
 'use client'
 
+import Hls from 'hls.js'
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 type Photo = { thumb: string; fullsize: string; alt: string }
+type Video = {
+  playlist: string
+  thumbnail: string | null
+  alt: string
+  aspectRatio: { width: number; height: number } | null
+}
 type Post = {
   uri: string
   cid: string
   text: string
   createdAt: string
   author: { handle: string; displayName: string; avatar: string | null }
-  images: Photo[]
+  images?: Photo[]
+  video?: Video
   likeCount: number
   repostCount: number
 }
@@ -21,7 +29,8 @@ type SearchResponse = {
 }
 
 type DisplayImage = { key: string; photo: Photo }
-type Mode = 'search' | 'accounts'
+type DisplayVideo = { key: string; video: Video }
+type Mode = 'search' | 'accounts' | 'videos'
 
 const AGE_KEY = 'visual-search-adult-confirmed'
 const ACCOUNTS_KEY = 'visual-search-accounts-v2'
@@ -48,7 +57,7 @@ function uniquePosts(posts: Post[]) {
 function randomizedImages(posts: Post[]) {
   return shuffle(
     posts.flatMap(post =>
-      post.images.map((photo, index) => ({
+      (post.images ?? []).map((photo, index) => ({
         key: `${post.uri}-${index}`,
         photo
       }))
@@ -56,8 +65,58 @@ function randomizedImages(posts: Post[]) {
   )
 }
 
+function randomizedVideos(posts: Post[]) {
+  return shuffle(
+    posts.flatMap(post => post.video ? [{ key: post.uri, video: post.video }] : [])
+  )
+}
+
 function cleanAccount(value: string) {
   return value.trim().replace(/^@+/, '').replace(/[\s,;]+/g, '')
+}
+
+function VideoCard({ video, mediaKey }: { video: Video; mediaKey: string }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+
+  useEffect(() => {
+    const element = videoRef.current
+    if (!element) return
+
+    if (element.canPlayType('application/vnd.apple.mpegurl')) {
+      element.src = video.playlist
+      return
+    }
+
+    if (!Hls.isSupported()) return
+
+    const hls = new Hls({
+      enableWorker: true,
+      lowLatencyMode: true,
+      backBufferLength: 30
+    })
+    hls.loadSource(video.playlist)
+    hls.attachMedia(element)
+
+    return () => hls.destroy()
+  }, [video.playlist])
+
+  const ratio = video.aspectRatio
+    ? `${video.aspectRatio.width} / ${video.aspectRatio.height}`
+    : '9 / 16'
+
+  return (
+    <div className="videoCard" key={mediaKey} style={{ aspectRatio: ratio }}>
+      <video
+        ref={videoRef}
+        poster={video.thumbnail ?? undefined}
+        controls
+        playsInline
+        preload="metadata"
+        aria-label={video.alt || 'Vidéo'}
+      />
+      <span className="videoMark" aria-hidden="true" />
+    </div>
+  )
 }
 
 export default function Home() {
@@ -67,6 +126,7 @@ export default function Home() {
   const [accounts, setAccounts] = useState<string[]>([])
   const [posts, setPosts] = useState<Post[]>([])
   const [displayImages, setDisplayImages] = useState<DisplayImage[]>([])
+  const [displayVideos, setDisplayVideos] = useState<DisplayVideo[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -108,7 +168,11 @@ export default function Home() {
     setFailed(false)
 
     try {
-      const endpoint = nextMode === 'accounts' ? '/api/accounts' : '/api/search'
+      const endpoint = nextMode === 'accounts'
+        ? '/api/accounts'
+        : nextMode === 'videos'
+          ? '/api/videos'
+          : '/api/search'
       const params = new URLSearchParams({ q: cleaned })
       if (nextMode === 'search') {
         params.set('sort', 'latest')
@@ -123,7 +187,15 @@ export default function Home() {
       const combined = append ? [...posts, ...data.posts] : data.posts
       const deduplicated = uniquePosts(combined)
       setPosts(deduplicated)
-      setDisplayImages(randomizedImages(deduplicated))
+
+      if (nextMode === 'videos') {
+        setDisplayVideos(randomizedVideos(deduplicated))
+        setDisplayImages([])
+      } else {
+        setDisplayImages(randomizedImages(deduplicated))
+        setDisplayVideos([])
+      }
+
       setCursor(data.cursor)
       setActiveQuery(cleaned)
     } catch {
@@ -131,6 +203,7 @@ export default function Home() {
       if (!append) {
         setPosts([])
         setDisplayImages([])
+        setDisplayVideos([])
         setCursor(null)
       }
     } finally {
@@ -174,6 +247,7 @@ export default function Home() {
     setMode(nextMode)
     setPosts([])
     setDisplayImages([])
+    setDisplayVideos([])
     setCursor(null)
     setActiveQuery('')
     setFailed(false)
@@ -189,12 +263,15 @@ export default function Home() {
     saveAccounts(next)
     setPosts([])
     setDisplayImages([])
+    setDisplayVideos([])
     setCursor(null)
     setActiveQuery('')
     if (next.length) {
       setTimeout(() => fetchFeed(next.map(item => `@${item}`).join(','), null, false, 'accounts'), 0)
     }
   }
+
+  const hasResults = mode === 'videos' ? displayVideos.length > 0 : displayImages.length > 0
 
   return (
     <main className="adultMode">
@@ -215,8 +292,11 @@ export default function Home() {
         <div className="topLine">
           <div className="eyebrow">Recherche visuelle</div>
           <div className="modeTabs" role="tablist" aria-label="Mode">
-            <button className={mode === 'search' ? 'active adultTab' : 'adultTab'} type="button" role="tab" aria-selected={mode === 'search'} aria-label="Recherche" onClick={() => switchMode('search')}>
+            <button className={mode === 'search' ? 'active adultTab' : 'adultTab'} type="button" role="tab" aria-selected={mode === 'search'} aria-label="Recherche photo" onClick={() => switchMode('search')}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13.7 2.8c.4 3.2-1.2 4.6-2.5 6.2-1.1 1.4-2 2.7-1.2 4.6.5 1.1 1.4 1.8 2.5 2.1-.1-2.1 1-3.4 2.5-4.9 2.2 1.8 3.8 4 3.8 6.6A6.7 6.7 0 0 1 12 24a6.8 6.8 0 0 1-6.8-6.7c0-4.8 3.5-7.5 5.6-10.2 1.1-1.4 2-2.7 2.9-4.3Z" /></svg>
+            </button>
+            <button className={mode === 'videos' ? 'active videoTab' : 'videoTab'} type="button" role="tab" aria-selected={mode === 'videos'} aria-label="Recherche vidéo" onClick={() => switchMode('videos')}>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="3" /><path className="videoPlay" d="m10 9 5 3-5 3Z" /></svg>
             </button>
             <button className={mode === 'accounts' ? 'active accountsTab' : 'accountsTab'} type="button" role="tab" aria-selected={mode === 'accounts'} aria-label="Comptes" onClick={() => switchMode('accounts')}>
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" /><path d="M3.8 18.5c.7-3 2.5-4.7 5.2-4.7s4.5 1.7 5.2 4.7" /><circle cx="17" cy="9" r="2.4" /><path d="M14.8 14.2c2.8-.6 4.8.7 5.4 3.3" /></svg>
@@ -225,7 +305,7 @@ export default function Home() {
         </div>
 
         <form className={`search ${failed ? 'failed' : ''}`} onSubmit={submit}>
-          <input value={query} onChange={event => setQuery(event.target.value)} placeholder={mode === 'accounts' ? '@compte…' : 'Rechercher…'} aria-label={mode === 'accounts' ? 'Ajouter un compte' : 'Recherche'} autoComplete="off" spellCheck={false} />
+          <input value={query} onChange={event => setQuery(event.target.value)} placeholder={mode === 'accounts' ? '@compte…' : 'Rechercher…'} aria-label={mode === 'accounts' ? 'Ajouter un compte' : mode === 'videos' ? 'Recherche vidéo' : 'Recherche'} autoComplete="off" spellCheck={false} />
           <button className={loading ? 'loading' : ''} type="submit" disabled={loading || !query.trim() || (mode === 'accounts' && accounts.length >= MAX_ACCOUNTS)} aria-label="Lancer">
             <span className="searchGlyph" aria-hidden="true" />
           </button>
@@ -243,9 +323,13 @@ export default function Home() {
         )}
       </section>
 
-      {(displayImages.length > 0 || (cursor && activeQuery)) && (
+      {(hasResults || (cursor && activeQuery)) && (
         <section className="resultsSection" aria-label="Résultats">
-          {displayImages.length > 0 && (
+          {mode === 'videos' && displayVideos.length > 0 ? (
+            <div className="videoGrid">
+              {displayVideos.map(({ key, video }) => <VideoCard key={key} mediaKey={key} video={video} />)}
+            </div>
+          ) : displayImages.length > 0 ? (
             <div className="grid">
               {displayImages.map(({ key, photo }) => (
                 <a className="imageCard" href={photo.fullsize} target="_blank" rel="noreferrer" key={key} aria-label="Ouvrir l’image">
@@ -253,7 +337,7 @@ export default function Home() {
                 </a>
               ))}
             </div>
-          )}
+          ) : null}
 
           {cursor && activeQuery && (
             <div className={`infiniteSentinel ${loading ? 'loading' : ''}`} ref={infiniteSentinel} aria-hidden="true">
