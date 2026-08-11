@@ -26,19 +26,31 @@ function cleanAccount(value:string){return value.trim().replace(/^@+/,'').replac
 function freshPosts(existing:Post[],incoming:Post[]){const uris=new Set(existing.map(post=>post.uri));const videos=new Set(existing.flatMap(post=>post.video?[post.video.playlist]:[]));return uniquePosts(incoming).filter(post=>{if(uris.has(post.uri))return false;if(post.video&&videos.has(post.video.playlist))return false;return true})}
 
 function VideoCard({video,mediaKey}:{video:Video;mediaKey:string}){
- const cardRef=useRef<HTMLDivElement|null>(null)
  const videoRef=useRef<HTMLVideoElement|null>(null)
- const [near,setNear]=useState(false)
  const width=video.aspectRatio?.width??9
  const height=video.aspectRatio?.height??16
  const ratio=`${width} / ${height}`
  const orientation=width>height*1.12?'videoLandscape':height>width*1.12?'videoPortrait':'videoSquare'
- const poster=video.thumbnail||video.playlist.replace(/playlist\.m3u8(?:\?.*)?$/,'thumbnail.jpg')
 
- useEffect(()=>{const node=cardRef.current;if(!node)return;const observer=new IntersectionObserver(entries=>{if(entries[0]?.isIntersecting){setNear(true);observer.disconnect()}},{rootMargin:'1600px 0px 1600px 0px',threshold:0});observer.observe(node);return()=>observer.disconnect()},[])
- useEffect(()=>{if(!near)return;const el=videoRef.current;if(!el)return;el.preload='auto';if(el.canPlayType('application/vnd.apple.mpegurl')){el.src=video.playlist;el.load();return}if(!Hls.isSupported())return;const hls=new Hls({enableWorker:true,lowLatencyMode:true,backBufferLength:20,maxBufferLength:12,startFragPrefetch:true,autoStartLoad:true});hls.loadSource(video.playlist);hls.attachMedia(el);return()=>hls.destroy()},[near,video.playlist])
+ useEffect(()=>{
+  const el=videoRef.current
+  if(!el)return
 
- return <div ref={cardRef} className={`videoCard ${orientation}`} key={mediaKey} style={{aspectRatio:ratio}}><video ref={videoRef} poster={poster||undefined} controls playsInline preload="none" aria-label={video.alt||'Vidéo'}/><span className="videoMark" aria-hidden="true"/></div>
+  if(el.canPlayType('application/vnd.apple.mpegurl')){
+   el.src=video.playlist
+   el.preload='metadata'
+   el.load()
+   return()=>{el.removeAttribute('src');el.load()}
+  }
+
+  if(!Hls.isSupported())return
+  const hls=new Hls({enableWorker:true,lowLatencyMode:false,backBufferLength:20,maxBufferLength:20,startFragPrefetch:true,autoStartLoad:true})
+  hls.loadSource(video.playlist)
+  hls.attachMedia(el)
+  return()=>hls.destroy()
+ },[video.playlist])
+
+ return <div className={`videoCard ${orientation}`} key={mediaKey} style={{aspectRatio:ratio}}><video ref={videoRef} poster={video.thumbnail??undefined} controls playsInline preload="metadata" aria-label={video.alt||'Vidéo'}/><span className="videoMark" aria-hidden="true"/></div>
 }
 
 export default function Home(){
@@ -66,7 +78,7 @@ export default function Home(){
   }catch{setFailed(true);lastCursorRef.current=null;if(!append){setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null)}}finally{loadingRef.current=false;setLoading(false)}
  }
 
- useEffect(()=>{const target=infiniteSentinel.current;if(!target||!cursor||!activeQuery)return;const observer=new IntersectionObserver(entries=>{if(!entries[0]?.isIntersecting||loadingRef.current)return;const q=mode==='accounts'?accountsQuery:activeQuery;if(q)fetchFeed(q,cursor,true,mode)},{rootMargin:'2400px 0px 2400px 0px',threshold:0});observer.observe(target);return()=>observer.disconnect()},[cursor,activeQuery,mode,accountsQuery,posts,displayVideos,displayImages,displayMedia])
+ useEffect(()=>{const target=infiniteSentinel.current;if(!target||!cursor||!activeQuery)return;const observer=new IntersectionObserver(entries=>{if(!entries[0]?.isIntersecting||loadingRef.current)return;const q=mode==='accounts'?accountsQuery:activeQuery;if(q)fetchFeed(q,cursor,true,mode)},{rootMargin:'1800px 0px 1800px 0px',threshold:0});observer.observe(target);return()=>observer.disconnect()},[cursor,activeQuery,mode,accountsQuery,posts,displayVideos,displayImages,displayMedia])
  function submit(e:FormEvent){e.preventDefault();lastCursorRef.current=null;if(mode==='accounts'){const account=cleanAccount(query);if(!account||accounts.includes(account)||accounts.length>=MAX_ACCOUNTS)return;const next=[...accounts,account];saveAccounts(next);setQuery('');fetchFeed(next.map(x=>`@${x}`).join(','),null,false,'accounts');return}fetchFeed(query)}
  function switchMode(nextMode:Mode){if(nextMode===mode||loadingRef.current)return;lastCursorRef.current=null;setMode(nextMode);setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');setFailed(false);setQuery('');if(nextMode==='accounts'&&accounts.length)setTimeout(()=>fetchFeed(accounts.map(x=>`@${x}`).join(','),null,false,'accounts'),0)}
  function removeAccount(account:string){const next=accounts.filter(x=>x!==account);saveAccounts(next);lastCursorRef.current=null;setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');if(next.length)setTimeout(()=>fetchFeed(next.map(x=>`@${x}`).join(','),null,false,'accounts'),0)}
