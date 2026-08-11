@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 
 type Photo = { thumb: string; fullsize: string; alt: string }
 type Post = {
@@ -72,6 +72,7 @@ export default function Home() {
   const [failed, setFailed] = useState(false)
   const [ageChecked, setAgeChecked] = useState(false)
   const [adultConfirmed, setAdultConfirmed] = useState(false)
+  const infiniteSentinel = useRef<HTMLDivElement | null>(null)
 
   const accountsQuery = useMemo(() => accounts.map(account => `@${account}`).join(','), [accounts])
 
@@ -136,6 +137,23 @@ export default function Home() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    const target = infiniteSentinel.current
+    if (!target || !cursor || !activeQuery) return
+
+    const observer = new IntersectionObserver(
+      entries => {
+        if (!entries[0]?.isIntersecting || loading) return
+        const nextQuery = mode === 'accounts' ? accountsQuery : activeQuery
+        if (nextQuery) fetchFeed(nextQuery, cursor, true, mode)
+      },
+      { rootMargin: '900px 0px 900px 0px', threshold: 0 }
+    )
+
+    observer.observe(target)
+    return () => observer.disconnect()
+  }, [cursor, activeQuery, loading, mode, accountsQuery, posts])
 
   function submit(event: FormEvent) {
     event.preventDefault()
@@ -238,10 +256,8 @@ export default function Home() {
           )}
 
           {cursor && activeQuery && (
-            <div className="moreWrap">
-              <button className={`moreButton ${loading ? 'loading' : ''}`} onClick={() => fetchFeed(mode === 'accounts' ? accountsQuery : activeQuery, cursor, true)} disabled={loading} aria-label="Charger plus">
-                <span aria-hidden="true" />
-              </button>
+            <div className={`infiniteSentinel ${loading ? 'loading' : ''}`} ref={infiniteSentinel} aria-hidden="true">
+              <span />
             </div>
           )}
         </section>
