@@ -68,33 +68,36 @@ function extractImages(embed: AnyObject | undefined) {
 }
 
 function normalizePosts(rawPosts: AnyObject[], adultOnly: boolean): AnyObject[] {
-  return rawPosts
-    .filter((post: AnyObject) => !adultOnly || hasAdultLabel(post))
-    .map((post: AnyObject) => {
-      const images = extractImages(post.embed)
-      if (!images.length) return null
+  const normalized: AnyObject[] = []
 
-      const rawHandle = post.author?.handle ?? post.author?.did ?? 'auteur'
-      const handle = cleanHandle(rawHandle)
-      const displayName = cleanVisibleText(post.author?.displayName) || handle
+  for (const post of rawPosts) {
+    if (adultOnly && !hasAdultLabel(post)) continue
 
-      return {
-        uri: post.uri,
-        cid: post.cid,
-        text: cleanVisibleText(post.record?.text),
-        createdAt: post.record?.createdAt ?? post.indexedAt,
-        indexedAt: post.indexedAt,
-        author: {
-          handle,
-          displayName,
-          avatar: post.author?.avatar ?? null
-        },
-        images,
-        likeCount: post.likeCount ?? 0,
-        repostCount: post.repostCount ?? 0
-      }
+    const images = extractImages(post.embed)
+    if (!images.length) continue
+
+    const rawHandle = post.author?.handle ?? post.author?.did ?? 'auteur'
+    const handle = cleanHandle(rawHandle)
+    const displayName = cleanVisibleText(post.author?.displayName) || handle
+
+    normalized.push({
+      uri: post.uri,
+      cid: post.cid,
+      text: cleanVisibleText(post.record?.text),
+      createdAt: post.record?.createdAt ?? post.indexedAt,
+      indexedAt: post.indexedAt,
+      author: {
+        handle,
+        displayName,
+        avatar: post.author?.avatar ?? null
+      },
+      images,
+      likeCount: post.likeCount ?? 0,
+      repostCount: post.repostCount ?? 0
     })
-    .filter((post): post is AnyObject => post !== null)
+  }
+
+  return normalized
 }
 
 function pageBoundary(rawPosts: AnyObject[]) {
