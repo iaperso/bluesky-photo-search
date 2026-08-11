@@ -11,7 +11,6 @@ type Post = {
   createdAt: string
   author: { handle: string; displayName: string; avatar: string | null }
   images: Photo[]
-  postUrl: string
   likeCount: number
   repostCount: number
 }
@@ -191,10 +190,10 @@ export default function Home() {
           <div className="grid">
             {posts.flatMap(post => post.images.map((photo, index) => (
               <article className="card" key={`${post.uri}-${index}`}>
-                <a className="imageWrap" href={post.postUrl} target="_blank" rel="noreferrer">
+                <div className="imageWrap">
                   <img src={photo.thumb || photo.fullsize} alt={photo.alt || post.text || 'Photo'} loading="lazy" />
                   {post.images.length > 1 && <span className="count">{index + 1}/{post.images.length}</span>}
-                </a>
+                </div>
                 <div className="cardBody">
                   <div className="authorRow">
                     {post.author.avatar ? <img className="avatar" src={post.author.avatar} alt="" /> : <div className="avatar fallback" />}
@@ -204,7 +203,6 @@ export default function Home() {
                   {post.text && <p className="caption">{post.text}</p>}
                   <div className="cardFooter">
                     <span>{new Date(post.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                    <a href={post.postUrl} target="_blank" rel="noreferrer">Voir la publication ↗</a>
                   </div>
                 </div>
               </article>
