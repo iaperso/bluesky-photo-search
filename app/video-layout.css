@@ -1,0 +1,48 @@
+.videoGrid {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 12px;
+  align-items: start;
+}
+
+.videoGrid .videoCard,
+.mixedGrid .videoCard {
+  min-height: 0;
+}
+
+.videoGrid .videoLandscape,
+.mixedGrid .videoLandscape {
+  grid-column: 1 / -1;
+}
+
+.videoGrid .videoPortrait,
+.videoGrid .videoSquare,
+.mixedGrid .videoPortrait,
+.mixedGrid .videoSquare {
+  grid-column: span 1;
+}
+
+.videoGrid .videoCard video,
+.mixedGrid .videoCard video {
+  object-fit: contain;
+}
+
+.mixedGrid {
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+}
+
+@media (max-width: 680px) {
+  .videoGrid,
+  .mixedGrid {
+    gap: 8px;
+  }
+
+  .videoLandscape {
+    border-radius: 11px;
+  }
+
+  .videoPortrait,
+  .videoSquare {
+    border-radius: 10px;
+  }
+}
