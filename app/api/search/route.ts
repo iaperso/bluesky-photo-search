@@ -8,11 +8,7 @@ type SearchResult = {
   hitsTotal: number | null
 }
 
-const SEARCH_ENDPOINTS = [
-  'https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts',
-  'https://api.bsky.app/xrpc/app.bsky.feed.searchPosts'
-]
-
+const HOSTS = ['https://public.api.bsky.app', 'https://api.bsky.app']
 const ADULT_LABELS = new Set(['porn', 'sexual'])
 
 function cleanVisibleText(value: string | null | undefined) {
@@ -107,12 +103,12 @@ function pageBoundary(rawPosts: AnyObject[]) {
   return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null
 }
 
-async function queryBatch(params: URLSearchParams) {
+async function xrpc(path: string, params: URLSearchParams) {
   let lastStatus = 502
   let lastDetails = ''
 
-  for (const endpoint of SEARCH_ENDPOINTS) {
-    const response = await fetch(`${endpoint}?${params.toString()}`, {
+  for (const host of HOSTS) {
+    const response = await fetch(`${host}/xrpc/${path}?${params.toString()}`, {
       headers: {
         Accept: 'application/json',
         'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)',
@@ -128,12 +124,47 @@ async function queryBatch(params: URLSearchParams) {
     lastStatus = response.status
     lastDetails = await response.text()
 
-    if (response.status !== 403 && response.status !== 429 && response.status < 500) {
-      break
-    }
+    if (response.status !== 403 && response.status !== 429 && response.status < 500) break
   }
 
   return { data: null, status: lastStatus, details: lastDetails }
+}
+
+async function authorPhotos(actor: string, adultOnly: boolean, cursor?: string | null, limit = 100) {
+  const params = new URLSearchParams({ actor, limit: String(limit), filter: 'posts_with_media', includePins: 'false' })
+  if (cursor) params.set('cursor', cursor)
+
+  const result = await xrpc('app.bsky.feed.getAuthorFeed', params)
+  if (!result.data) return { posts: [] as AnyObject[], cursor: null as string | null, status: result.status, details: result.details }
+
+  const rawPosts = (Array.isArray(result.data.feed) ? result.data.feed : [])
+    .map((item: AnyObject) => item?.post)
+    .filter(Boolean)
+
+  return {
+    posts: normalizePosts(rawPosts, adultOnly),
+    cursor: result.data.cursor ?? null,
+    status: 200,
+    details: ''
+  }
+}
+
+function directActorFromQuery(q: string) {
+  const actor = q.trim().replace(/^@+/, '')
+  if (!actor || /\s/.test(actor)) return null
+  if (actor.startsWith('did:') || actor.includes('.')) return actor
+  return null
+}
+
+async function actorMatches(q: string) {
+  const params = new URLSearchParams({ q: q.replace(/^@+/, ''), limit: '4' })
+  const result = await xrpc('app.bsky.actor.searchActors', params)
+  if (!result.data || !Array.isArray(result.data.actors)) return [] as string[]
+
+  return result.data.actors
+    .map((actor: AnyObject) => actor?.handle ?? actor?.did)
+    .filter((actor: unknown): actor is string => typeof actor === 'string' && actor.length > 0)
+    .slice(0, 4)
 }
 
 export async function GET(request: NextRequest) {
@@ -142,23 +173,56 @@ export async function GET(request: NextRequest) {
   const sort = request.nextUrl.searchParams.get('sort') === 'top' ? 'top' : 'latest'
   const adultOnly = request.nextUrl.searchParams.get('mode') === 'adult'
 
-  if (!q) {
-    return NextResponse.json({ error: 'La recherche est vide.' }, { status: 400 })
-  }
-
-  let until = requestedCursor && !Number.isNaN(Date.parse(requestedCursor)) ? requestedCursor : null
-  let hitsTotal: number | null = null
-  let nextCursor: string | null = null
-  const collected: AnyObject[] = []
-  const seen = new Set<string>()
-  const scans = adultOnly ? 4 : 1
+  if (!q) return NextResponse.json({ error: 'La recherche est vide.' }, { status: 400 })
 
   try {
+    const directActor = directActorFromQuery(q)
+
+    if (directActor) {
+      const actorCursor = requestedCursor?.startsWith('actor:') ? requestedCursor.slice(6) : null
+      const result = await authorPhotos(directActor, adultOnly, actorCursor, 100)
+
+      if (result.status !== 200) {
+        return NextResponse.json(
+          { error: `La recherche distante a échoué (${result.status}).`, details: result.details },
+          { status: result.status }
+        )
+      }
+
+      return NextResponse.json({
+        posts: result.posts,
+        cursor: result.cursor ? `actor:${result.cursor}` : null,
+        hitsTotal: null
+      } satisfies SearchResult)
+    }
+
+    let until = requestedCursor && !requestedCursor.startsWith('actor:') && !Number.isNaN(Date.parse(requestedCursor))
+      ? requestedCursor
+      : null
+    let hitsTotal: number | null = null
+    let nextCursor: string | null = null
+    const collected: AnyObject[] = []
+    const seen = new Set<string>()
+
+    if (!requestedCursor) {
+      const actors = await actorMatches(q)
+      const actorFeeds = await Promise.all(actors.map(actor => authorPhotos(actor, adultOnly, null, 30)))
+      for (const feed of actorFeeds) {
+        for (const post of feed.posts) {
+          if (!post?.uri || seen.has(post.uri)) continue
+          seen.add(post.uri)
+          collected.push(post)
+        }
+      }
+    }
+
+    const scans = adultOnly ? 4 : 1
+
     for (let scan = 0; scan < scans; scan += 1) {
       const params = new URLSearchParams({ q, sort, limit: '100' })
       if (until) params.set('until', until)
 
-      const result = await queryBatch(params)
+      const result = await xrpc('app.bsky.feed.searchPosts', params)
       if (!result.data) {
         return NextResponse.json(
           { error: `La recherche distante a échoué (${result.status}).`, details: result.details },
@@ -166,9 +230,7 @@ export async function GET(request: NextRequest) {
         )
       }
 
-      if (hitsTotal === null && typeof result.data.hitsTotal === 'number') {
-        hitsTotal = result.data.hitsTotal
-      }
+      if (hitsTotal === null && typeof result.data.hitsTotal === 'number') hitsTotal = result.data.hitsTotal
 
       const rawPosts: AnyObject[] = Array.isArray(result.data.posts) ? result.data.posts : []
       if (!rawPosts.length) {
@@ -176,8 +238,7 @@ export async function GET(request: NextRequest) {
         break
       }
 
-      const normalized = normalizePosts(rawPosts, adultOnly)
-      for (const post of normalized) {
+      for (const post of normalizePosts(rawPosts, adultOnly)) {
         if (!post?.uri || seen.has(post.uri)) continue
         seen.add(post.uri)
         collected.push(post)
@@ -185,17 +246,16 @@ export async function GET(request: NextRequest) {
 
       nextCursor = pageBoundary(rawPosts)
       until = nextCursor
-
-      if (!adultOnly || collected.length >= 20 || !nextCursor) break
+      if (!adultOnly || collected.length >= 24 || !nextCursor) break
     }
 
-    const response: SearchResult = {
+    collected.sort((a, b) => Date.parse(b.createdAt ?? b.indexedAt ?? '') - Date.parse(a.createdAt ?? a.indexedAt ?? ''))
+
+    return NextResponse.json({
       posts: collected,
       cursor: nextCursor,
       hitsTotal
-    }
-
-    return NextResponse.json(response)
+    } satisfies SearchResult)
   } catch {
     return NextResponse.json(
       { error: 'Impossible de joindre le service de recherche pour le moment.' },
