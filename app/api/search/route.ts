@@ -2,7 +2,16 @@ import { NextRequest, NextResponse } from 'next/server'
 
 type AnyObject = Record<string, any>
 
-const BSKY_SEARCH = 'https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts'
+type SearchResult = {
+  posts: AnyObject[]
+  cursor: string | null
+  hitsTotal: number | null
+}
+
+const SEARCH_ENDPOINTS = [
+  'https://public.api.bsky.app/xrpc/app.bsky.feed.searchPosts',
+  'https://api.bsky.app/xrpc/app.bsky.feed.searchPosts'
+]
 
 function extractImages(embed: AnyObject | undefined) {
   if (!embed) return [] as { thumb: string; fullsize: string; alt: string }[]
@@ -38,6 +47,50 @@ function postUrl(uri: string, handle: string) {
   return rkey ? `https://bsky.app/profile/${encodeURIComponent(handle)}/post/${rkey}` : 'https://bsky.app'
 }
 
+function normalizeResults(data: AnyObject): SearchResult {
+  const posts = (data.posts ?? [])
+    .map((post: AnyObject) => {
+      const images = extractImages(post.embed)
+      if (!images.length) return null
+
+      const handle = post.author?.handle ?? post.author?.did ?? 'publication'
+      return {
+        uri: post.uri,
+        cid: post.cid,
+        text: post.record?.text ?? '',
+        createdAt: post.record?.createdAt ?? post.indexedAt,
+        indexedAt: post.indexedAt,
+        author: {
+          handle,
+          displayName: post.author?.displayName ?? handle,
+          avatar: post.author?.avatar ?? null
+        },
+        images,
+        postUrl: postUrl(post.uri, handle),
+        likeCount: post.likeCount ?? 0,
+        repostCount: post.repostCount ?? 0
+      }
+    })
+    .filter(Boolean)
+
+  return {
+    posts,
+    cursor: data.cursor ?? null,
+    hitsTotal: data.hitsTotal ?? null
+  }
+}
+
+async function queryEndpoint(url: string, params: URLSearchParams) {
+  return fetch(`${url}?${params.toString()}`, {
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)',
+      'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
+    },
+    cache: 'no-store'
+  })
+}
+
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim()
   const cursor = request.nextUrl.searchParams.get('cursor') ?? undefined
@@ -50,54 +103,36 @@ export async function GET(request: NextRequest) {
   const params = new URLSearchParams({ q, sort, limit: '50' })
   if (cursor) params.set('cursor', cursor)
 
-  try {
-    const response = await fetch(`${BSKY_SEARCH}?${params.toString()}`, {
-      headers: { Accept: 'application/json' },
-      cache: 'no-store'
-    })
+  let lastStatus = 502
+  let lastDetails = ''
 
-    if (!response.ok) {
-      const details = await response.text()
-      return NextResponse.json(
-        { error: `Bluesky a refusé la recherche (${response.status}).`, details },
-        { status: response.status }
-      )
+  try {
+    for (const endpoint of SEARCH_ENDPOINTS) {
+      const response = await queryEndpoint(endpoint, params)
+
+      if (response.ok) {
+        const data = await response.json()
+        return NextResponse.json(normalizeResults(data))
+      }
+
+      lastStatus = response.status
+      lastDetails = await response.text()
+
+      if (response.status !== 403 && response.status !== 429 && response.status < 500) {
+        break
+      }
     }
 
-    const data = await response.json()
-    const results = (data.posts ?? [])
-      .map((post: AnyObject) => {
-        const images = extractImages(post.embed)
-        if (!images.length) return null
-
-        const handle = post.author?.handle ?? post.author?.did ?? 'bsky.app'
-        return {
-          uri: post.uri,
-          cid: post.cid,
-          text: post.record?.text ?? '',
-          createdAt: post.record?.createdAt ?? post.indexedAt,
-          indexedAt: post.indexedAt,
-          author: {
-            handle,
-            displayName: post.author?.displayName ?? handle,
-            avatar: post.author?.avatar ?? null
-          },
-          images,
-          postUrl: postUrl(post.uri, handle),
-          likeCount: post.likeCount ?? 0,
-          repostCount: post.repostCount ?? 0
-        }
-      })
-      .filter(Boolean)
-
-    return NextResponse.json({
-      posts: results,
-      cursor: data.cursor ?? null,
-      hitsTotal: data.hitsTotal ?? null
-    })
-  } catch (error) {
     return NextResponse.json(
-      { error: 'Impossible de joindre Bluesky pour le moment.' },
+      {
+        error: `La recherche distante a échoué (${lastStatus}).`,
+        details: lastDetails
+      },
+      { status: lastStatus }
+    )
+  } catch {
+    return NextResponse.json(
+      { error: 'Impossible de joindre le service de recherche pour le moment.' },
       { status: 502 }
     )
   }
