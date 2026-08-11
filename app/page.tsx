@@ -20,48 +20,56 @@ function shuffle<T>(items:T[]){const copy=[...items];for(let i=copy.length-1;i>0
 function uniquePosts(posts:Post[]){const seen=new Set<string>();return posts.filter(post=>{if(seen.has(post.uri))return false;seen.add(post.uri);return true})}
 function byLikes(posts:Post[]){return [...posts].sort((a,b)=>(b.likeCount??0)-(a.likeCount??0))}
 function imageItems(posts:Post[]):DisplayImage[]{return posts.flatMap(post=>(post.images??[]).map((photo,index)=>({key:`${post.uri}-${index}`,photo})))}
-function videoItems(posts:Post[]):DisplayVideo[]{return posts.flatMap(post=>post.video?[{key:post.uri,video:post.video}]:[])}
-function mediaItems(posts:Post[]):DisplayMedia[]{return posts.flatMap(post=>{const media:DisplayMedia[]=(post.images??[]).map((photo,index)=>({key:`${post.uri}-image-${index}`,kind:'image' as const,photo}));if(post.video)media.push({key:`${post.uri}-video`,kind:'video',video:post.video});return media})}
+function videoItems(posts:Post[]):DisplayVideo[]{const seen=new Set<string>();return posts.flatMap(post=>{if(!post.video||seen.has(post.video.playlist))return[];seen.add(post.video.playlist);return[{key:post.video.playlist,video:post.video}]})}
+function mediaItems(posts:Post[]):DisplayMedia[]{const seenVideos=new Set<string>();return posts.flatMap(post=>{const media:DisplayMedia[]=(post.images??[]).map((photo,index)=>({key:`${post.uri}-image-${index}`,kind:'image' as const,photo}));if(post.video&&!seenVideos.has(post.video.playlist)){seenVideos.add(post.video.playlist);media.push({key:post.video.playlist,kind:'video',video:post.video})}return media})}
 function cleanAccount(value:string){return value.trim().replace(/^@+/,'').replace(/[\s,;]+/g,'')}
+function freshPosts(existing:Post[],incoming:Post[]){const uris=new Set(existing.map(post=>post.uri));const videos=new Set(existing.flatMap(post=>post.video?[post.video.playlist]:[]));return uniquePosts(incoming).filter(post=>{if(uris.has(post.uri))return false;if(post.video&&videos.has(post.video.playlist))return false;return true})}
 
 function VideoCard({video,mediaKey}:{video:Video;mediaKey:string}){
+ const cardRef=useRef<HTMLDivElement|null>(null)
  const videoRef=useRef<HTMLVideoElement|null>(null)
- useEffect(()=>{const el=videoRef.current;if(!el)return;if(el.canPlayType('application/vnd.apple.mpegurl')){el.src=video.playlist;return}if(!Hls.isSupported())return;const hls=new Hls({enableWorker:true,lowLatencyMode:true,backBufferLength:30});hls.loadSource(video.playlist);hls.attachMedia(el);return()=>hls.destroy()},[video.playlist])
+ const [near,setNear]=useState(false)
  const width=video.aspectRatio?.width??9
  const height=video.aspectRatio?.height??16
  const ratio=`${width} / ${height}`
  const orientation=width>height*1.12?'videoLandscape':height>width*1.12?'videoPortrait':'videoSquare'
- return <div className={`videoCard ${orientation}`} key={mediaKey} style={{aspectRatio:ratio}}><video ref={videoRef} poster={video.thumbnail??undefined} controls playsInline preload="metadata" aria-label={video.alt||'Vidéo'}/><span className="videoMark" aria-hidden="true"/></div>
+ const poster=video.thumbnail||video.playlist.replace(/playlist\.m3u8(?:\?.*)?$/,'thumbnail.jpg')
+
+ useEffect(()=>{const node=cardRef.current;if(!node)return;const observer=new IntersectionObserver(entries=>{if(entries[0]?.isIntersecting){setNear(true);observer.disconnect()}},{rootMargin:'1600px 0px 1600px 0px',threshold:0});observer.observe(node);return()=>observer.disconnect()},[])
+ useEffect(()=>{if(!near)return;const el=videoRef.current;if(!el)return;el.preload='auto';if(el.canPlayType('application/vnd.apple.mpegurl')){el.src=video.playlist;el.load();return}if(!Hls.isSupported())return;const hls=new Hls({enableWorker:true,lowLatencyMode:true,backBufferLength:20,maxBufferLength:12,startFragPrefetch:true,autoStartLoad:true});hls.loadSource(video.playlist);hls.attachMedia(el);return()=>hls.destroy()},[near,video.playlist])
+
+ return <div ref={cardRef} className={`videoCard ${orientation}`} key={mediaKey} style={{aspectRatio:ratio}}><video ref={videoRef} poster={poster||undefined} controls playsInline preload="none" aria-label={video.alt||'Vidéo'}/><span className="videoMark" aria-hidden="true"/></div>
 }
 
 export default function Home(){
- const[query,setQuery]=useState('');const[activeQuery,setActiveQuery]=useState('');const[mode,setMode]=useState<Mode>('search');const[accounts,setAccounts]=useState<string[]>([]);const[posts,setPosts]=useState<Post[]>([]);const[displayImages,setDisplayImages]=useState<DisplayImage[]>([]);const[displayVideos,setDisplayVideos]=useState<DisplayVideo[]>([]);const[displayMedia,setDisplayMedia]=useState<DisplayMedia[]>([]);const[cursor,setCursor]=useState<string|null>(null);const[loading,setLoading]=useState(false);const[failed,setFailed]=useState(false);const[ageChecked,setAgeChecked]=useState(false);const[adultConfirmed,setAdultConfirmed]=useState(false);const infiniteSentinel=useRef<HTMLDivElement|null>(null)
+ const[query,setQuery]=useState('');const[activeQuery,setActiveQuery]=useState('');const[mode,setMode]=useState<Mode>('search');const[accounts,setAccounts]=useState<string[]>([]);const[posts,setPosts]=useState<Post[]>([]);const[displayImages,setDisplayImages]=useState<DisplayImage[]>([]);const[displayVideos,setDisplayVideos]=useState<DisplayVideo[]>([]);const[displayMedia,setDisplayMedia]=useState<DisplayMedia[]>([]);const[cursor,setCursor]=useState<string|null>(null);const[loading,setLoading]=useState(false);const[failed,setFailed]=useState(false);const[ageChecked,setAgeChecked]=useState(false);const[adultConfirmed,setAdultConfirmed]=useState(false);const infiniteSentinel=useRef<HTMLDivElement|null>(null);const loadingRef=useRef(false);const lastCursorRef=useRef<string|null>(null)
  const accountsQuery=useMemo(()=>accounts.map(a=>`@${a}`).join(','),[accounts])
  useEffect(()=>{try{setAdultConfirmed(localStorage.getItem(AGE_KEY)==='yes');const saved=JSON.parse(localStorage.getItem(ACCOUNTS_KEY)??'[]');if(Array.isArray(saved))setAccounts(saved.filter(x=>typeof x==='string').slice(0,MAX_ACCOUNTS))}catch{setAdultConfirmed(false)}finally{setAgeChecked(true)}},[])
  function saveAccounts(next:string[]){setAccounts(next);try{localStorage.setItem(ACCOUNTS_KEY,JSON.stringify(next))}catch{}}
  function confirmAdult(){try{localStorage.setItem(AGE_KEY,'yes')}catch{}setAdultConfirmed(true)}
 
  async function fetchFeed(nextQuery:string,nextCursor?:string|null,append=false,nextMode:Mode=mode){
-  const cleaned=nextQuery.trim();if(!cleaned||loading)return;setLoading(true);setFailed(false)
+  const cleaned=nextQuery.trim();if(!cleaned||loadingRef.current)return;if(append&&nextCursor&&lastCursorRef.current===nextCursor)return;loadingRef.current=true;if(append&&nextCursor)lastCursorRef.current=nextCursor;setLoading(true);setFailed(false)
   try{
    const endpoint=nextMode==='accounts'?'/api/accounts':nextMode==='videos'?'/api/videos':'/api/search';const params=new URLSearchParams({q:cleaned});if(nextMode==='search'){params.set('sort','latest');params.set('mode','adult')}if(nextCursor)params.set('cursor',nextCursor)
    const response=await fetch(`${endpoint}?${params}`);const data:SearchResponse=await response.json();if(!response.ok)throw new Error(data.error||'search')
-   const newPosts=uniquePosts(data.posts);const combined=uniquePosts(append?[...posts,...newPosts]:newPosts);setPosts(combined)
+   const newPosts=append?freshPosts(posts,data.posts):uniquePosts(data.posts);const combined=uniquePosts(append?[...posts,...newPosts]:newPosts);setPosts(combined)
    if(nextMode==='videos'){
-    setDisplayVideos(append?[...displayVideos,...shuffle(videoItems(newPosts))]:videoItems(byLikes(newPosts)));setDisplayImages([]);setDisplayMedia([])
+    const fresh=videoItems(newPosts);setDisplayVideos(append?[...displayVideos,...shuffle(fresh)]:videoItems(byLikes(newPosts)));setDisplayImages([]);setDisplayMedia([])
    }else if(nextMode==='accounts'){
-    setDisplayMedia(append?[...displayMedia,...shuffle(mediaItems(newPosts))]:mediaItems(byLikes(newPosts)));setDisplayImages([]);setDisplayVideos([])
+    const fresh=mediaItems(newPosts);setDisplayMedia(append?[...displayMedia,...shuffle(fresh)]:mediaItems(byLikes(newPosts)));setDisplayImages([]);setDisplayVideos([])
    }else{
-    setDisplayImages(append?[...displayImages,...shuffle(imageItems(newPosts))]:imageItems(byLikes(newPosts)));setDisplayVideos([]);setDisplayMedia([])
+    const fresh=imageItems(newPosts);setDisplayImages(append?[...displayImages,...shuffle(fresh)]:imageItems(byLikes(newPosts)));setDisplayVideos([]);setDisplayMedia([])
    }
-   setCursor(data.cursor);setActiveQuery(cleaned)
-  }catch{setFailed(true);if(!append){setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null)}}finally{setLoading(false)}
+   const stalled=append&&nextCursor&&data.cursor===nextCursor
+   setCursor(stalled?null:data.cursor);if(!stalled)lastCursorRef.current=null;setActiveQuery(cleaned)
+  }catch{setFailed(true);lastCursorRef.current=null;if(!append){setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null)}}finally{loadingRef.current=false;setLoading(false)}
  }
 
- useEffect(()=>{const target=infiniteSentinel.current;if(!target||!cursor||!activeQuery)return;const observer=new IntersectionObserver(entries=>{if(!entries[0]?.isIntersecting||loading)return;const q=mode==='accounts'?accountsQuery:activeQuery;if(q)fetchFeed(q,cursor,true,mode)},{rootMargin:'900px 0px 900px 0px',threshold:0});observer.observe(target);return()=>observer.disconnect()},[cursor,activeQuery,loading,mode,accountsQuery,posts])
- function submit(e:FormEvent){e.preventDefault();if(mode==='accounts'){const account=cleanAccount(query);if(!account||accounts.includes(account)||accounts.length>=MAX_ACCOUNTS)return;const next=[...accounts,account];saveAccounts(next);setQuery('');fetchFeed(next.map(x=>`@${x}`).join(','),null,false,'accounts');return}fetchFeed(query)}
- function switchMode(nextMode:Mode){if(nextMode===mode||loading)return;setMode(nextMode);setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');setFailed(false);setQuery('');if(nextMode==='accounts'&&accounts.length)setTimeout(()=>fetchFeed(accounts.map(x=>`@${x}`).join(','),null,false,'accounts'),0)}
- function removeAccount(account:string){const next=accounts.filter(x=>x!==account);saveAccounts(next);setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');if(next.length)setTimeout(()=>fetchFeed(next.map(x=>`@${x}`).join(','),null,false,'accounts'),0)}
+ useEffect(()=>{const target=infiniteSentinel.current;if(!target||!cursor||!activeQuery)return;const observer=new IntersectionObserver(entries=>{if(!entries[0]?.isIntersecting||loadingRef.current)return;const q=mode==='accounts'?accountsQuery:activeQuery;if(q)fetchFeed(q,cursor,true,mode)},{rootMargin:'2400px 0px 2400px 0px',threshold:0});observer.observe(target);return()=>observer.disconnect()},[cursor,activeQuery,mode,accountsQuery,posts,displayVideos,displayImages,displayMedia])
+ function submit(e:FormEvent){e.preventDefault();lastCursorRef.current=null;if(mode==='accounts'){const account=cleanAccount(query);if(!account||accounts.includes(account)||accounts.length>=MAX_ACCOUNTS)return;const next=[...accounts,account];saveAccounts(next);setQuery('');fetchFeed(next.map(x=>`@${x}`).join(','),null,false,'accounts');return}fetchFeed(query)}
+ function switchMode(nextMode:Mode){if(nextMode===mode||loadingRef.current)return;lastCursorRef.current=null;setMode(nextMode);setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');setFailed(false);setQuery('');if(nextMode==='accounts'&&accounts.length)setTimeout(()=>fetchFeed(accounts.map(x=>`@${x}`).join(','),null,false,'accounts'),0)}
+ function removeAccount(account:string){const next=accounts.filter(x=>x!==account);saveAccounts(next);lastCursorRef.current=null;setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');if(next.length)setTimeout(()=>fetchFeed(next.map(x=>`@${x}`).join(','),null,false,'accounts'),0)}
  const hasResults=mode==='videos'?displayVideos.length>0:mode==='accounts'?displayMedia.length>0:displayImages.length>0
 
  return <main className="adultMode">
