@@ -3,8 +3,8 @@ import './globals.css'
 import './age-gate.css'
 import './mixed-media.css'
 import './video-layout.css'
-import './account-viewer.css'
-import AccountVideoViewer from './AccountVideoViewer'
+import './viewer.css'
+import MediaViewer from './MediaViewer'
 
 export const metadata: Metadata = {
   title: 'Recherche visuelle',
@@ -16,7 +16,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="fr">
       <body>
         {children}
-        <AccountVideoViewer />
+        <MediaViewer />
       </body>
     </html>
   )
