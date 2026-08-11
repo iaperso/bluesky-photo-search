@@ -27,6 +27,55 @@
   object-fit: contain;
 }
 
+.videoPoster {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #030303;
+  z-index: 1;
+}
+
+.videoStart {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  border: 0;
+  background: transparent;
+  display: grid;
+  place-items: center;
+}
+
+.videoStart span {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(22,22,22,.78);
+  box-shadow: 0 10px 30px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.08);
+  backdrop-filter: blur(10px);
+  position: relative;
+}
+
+.videoStart span::after {
+  content: "";
+  position: absolute;
+  left: 23px;
+  top: 18px;
+  border-left: 16px solid #fff;
+  border-top: 11px solid transparent;
+  border-bottom: 11px solid transparent;
+}
+
+.videoStarted .videoStart,
+.videoStarted .videoPoster {
+  pointer-events: none;
+}
+
+.videoFailed .videoStart {
+  background: rgba(0,0,0,.08);
+}
+
 .mixedGrid {
   grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
 }
@@ -44,5 +93,18 @@
   .videoPortrait,
   .videoSquare {
     border-radius: 10px;
+  }
+
+  .videoStart span {
+    width: 50px;
+    height: 50px;
+  }
+
+  .videoStart span::after {
+    left: 20px;
+    top: 15px;
+    border-left-width: 14px;
+    border-top-width: 10px;
+    border-bottom-width: 10px;
   }
 }
