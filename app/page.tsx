@@ -27,30 +27,58 @@ function freshPosts(existing:Post[],incoming:Post[]){const uris=new Set(existing
 
 function VideoCard({video,mediaKey}:{video:Video;mediaKey:string}){
  const videoRef=useRef<HTMLVideoElement|null>(null)
+ const hlsRef=useRef<Hls|null>(null)
+ const[started,setStarted]=useState(false)
+ const[ready,setReady]=useState(false)
+ const[failed,setFailed]=useState(false)
  const width=video.aspectRatio?.width??9
  const height=video.aspectRatio?.height??16
  const ratio=`${width} / ${height}`
  const orientation=width>height*1.12?'videoLandscape':height>width*1.12?'videoPortrait':'videoSquare'
 
  useEffect(()=>{
+  if(!started)return
   const el=videoRef.current
   if(!el)return
+  setFailed(false)
+
+  const onReady=()=>setReady(true)
+  const onError=()=>{setFailed(true);setReady(false)}
+  el.addEventListener('loadeddata',onReady)
+  el.addEventListener('canplay',onReady)
+  el.addEventListener('error',onError)
 
   if(el.canPlayType('application/vnd.apple.mpegurl')){
-   el.src=video.playlist
-   el.preload='metadata'
+   if(el.src!==video.playlist)el.src=video.playlist
+   el.preload='auto'
    el.load()
-   return()=>{el.removeAttribute('src');el.load()}
+  }else if(Hls.isSupported()){
+   const hls=new Hls({enableWorker:true,lowLatencyMode:false,backBufferLength:20,maxBufferLength:20,startFragPrefetch:true,autoStartLoad:true})
+   hlsRef.current=hls
+   hls.on(Hls.Events.ERROR,(_event,data)=>{if(data.fatal){setFailed(true);setReady(false)}})
+   hls.loadSource(video.playlist)
+   hls.attachMedia(el)
   }
 
-  if(!Hls.isSupported())return
-  const hls=new Hls({enableWorker:true,lowLatencyMode:false,backBufferLength:20,maxBufferLength:20,startFragPrefetch:true,autoStartLoad:true})
-  hls.loadSource(video.playlist)
-  hls.attachMedia(el)
-  return()=>hls.destroy()
- },[video.playlist])
+  return()=>{
+   el.removeEventListener('loadeddata',onReady)
+   el.removeEventListener('canplay',onReady)
+   el.removeEventListener('error',onError)
+   if(hlsRef.current){hlsRef.current.destroy();hlsRef.current=null}
+  }
+ },[started,video.playlist])
 
- return <div className={`videoCard ${orientation}`} key={mediaKey} style={{aspectRatio:ratio}}><video ref={videoRef} poster={video.thumbnail??undefined} controls playsInline preload="metadata" aria-label={video.alt||'Vidéo'}/><span className="videoMark" aria-hidden="true"/></div>
+ async function startPlayback(){
+  if(!started){setStarted(true);requestAnimationFrame(()=>videoRef.current?.play().catch(()=>{}));return}
+  if(failed){setFailed(false);setReady(false);const el=videoRef.current;if(el){el.src=video.playlist;el.load();el.play().catch(()=>{})}}
+ }
+
+ return <div className={`videoCard ${orientation} ${started?'videoStarted':''} ${failed?'videoFailed':''}`} key={mediaKey} style={{aspectRatio:ratio}}>
+  <video ref={videoRef} controls={started} playsInline preload="none" aria-label={video.alt||'Vidéo'} onPlay={()=>setReady(true)}/>
+  {!ready&&video.thumbnail&&<img className="videoPoster" src={video.thumbnail} alt="" loading="eager" decoding="async"/>}
+  {!ready&&<button className="videoStart" type="button" onClick={startPlayback} aria-label={failed?'Réessayer la vidéo':'Lire la vidéo'}><span/></button>}
+  <span className="videoMark" aria-hidden="true"/>
+ </div>
 }
 
 export default function Home(){
