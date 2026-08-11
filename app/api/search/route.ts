@@ -13,6 +13,22 @@ const SEARCH_ENDPOINTS = [
   'https://api.bsky.app/xrpc/app.bsky.feed.searchPosts'
 ]
 
+function cleanVisibleText(value: string | null | undefined) {
+  return (value ?? '')
+    .replace(/https?:\/\/(?:www\.)?bsky\.app\/\S*/gi, '')
+    .replace(/\bblue\s*sky\b/gi, '')
+    .replace(/\bbluesky\b/gi, '')
+    .replace(/\.bsky\.social\b/gi, '')
+    .replace(/\bbsky\.app\b/gi, '')
+    .replace(/\bbsky\b/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+function cleanHandle(value: string | null | undefined) {
+  return cleanVisibleText(value).replace(/^@+/, '') || 'auteur'
+}
+
 function extractImages(embed: AnyObject | undefined) {
   if (!embed) return [] as { thumb: string; fullsize: string; alt: string }[]
 
@@ -23,7 +39,7 @@ function extractImages(embed: AnyObject | undefined) {
       .map((image: AnyObject) => ({
         thumb: image.thumb,
         fullsize: image.fullsize,
-        alt: image.alt ?? ''
+        alt: cleanVisibleText(image.alt)
       }))
       .filter((image: AnyObject) => image.thumb && image.fullsize)
   }
@@ -33,18 +49,12 @@ function extractImages(embed: AnyObject | undefined) {
       .map((image: AnyObject) => ({
         thumb: image.thumbnail ?? image.thumb,
         fullsize: image.fullsize,
-        alt: image.alt ?? ''
+        alt: cleanVisibleText(image.alt)
       }))
       .filter((image: AnyObject) => image.thumb && image.fullsize)
   }
 
   return []
-}
-
-function postUrl(uri: string, handle: string) {
-  const parts = uri.split('/')
-  const rkey = parts.at(-1)
-  return rkey ? `https://bsky.app/profile/${encodeURIComponent(handle)}/post/${rkey}` : 'https://bsky.app'
 }
 
 function normalizeResults(data: AnyObject): SearchResult {
@@ -53,20 +63,22 @@ function normalizeResults(data: AnyObject): SearchResult {
       const images = extractImages(post.embed)
       if (!images.length) return null
 
-      const handle = post.author?.handle ?? post.author?.did ?? 'publication'
+      const rawHandle = post.author?.handle ?? post.author?.did ?? 'auteur'
+      const handle = cleanHandle(rawHandle)
+      const displayName = cleanVisibleText(post.author?.displayName) || handle
+
       return {
         uri: post.uri,
         cid: post.cid,
-        text: post.record?.text ?? '',
+        text: cleanVisibleText(post.record?.text),
         createdAt: post.record?.createdAt ?? post.indexedAt,
         indexedAt: post.indexedAt,
         author: {
           handle,
-          displayName: post.author?.displayName ?? handle,
+          displayName,
           avatar: post.author?.avatar ?? null
         },
         images,
-        postUrl: postUrl(post.uri, handle),
         likeCount: post.likeCount ?? 0,
         repostCount: post.repostCount ?? 0
       }
