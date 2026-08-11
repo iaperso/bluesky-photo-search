@@ -67,7 +67,15 @@ export default function Home() {
       const data: SearchResponse = await response.json()
       if (!response.ok) throw new Error(data.error || 'search')
 
-      setPosts(previous => append ? [...previous, ...data.posts] : data.posts)
+      setPosts(previous => {
+        const combined = append ? [...previous, ...data.posts] : data.posts
+        const seen = new Set<string>()
+        return combined.filter(post => {
+          if (seen.has(post.uri)) return false
+          seen.add(post.uri)
+          return true
+        })
+      })
       setCursor(data.cursor)
       setActiveQuery(cleaned)
     } catch {
@@ -162,22 +170,24 @@ export default function Home() {
         </form>
       </section>
 
-      {posts.length > 0 && (
+      {(posts.length > 0 || (cursor && activeQuery)) && (
         <section className="resultsSection" aria-label="Résultats">
-          <div className="grid">
-            {posts.flatMap(post => post.images.map((photo, index) => (
-              <a
-                className="imageCard"
-                href={photo.fullsize}
-                target="_blank"
-                rel="noreferrer"
-                key={`${post.uri}-${index}`}
-                aria-label="Ouvrir l’image"
-              >
-                <img src={photo.thumb || photo.fullsize} alt="" loading="lazy" />
-              </a>
-            )))}
-          </div>
+          {posts.length > 0 && (
+            <div className="grid">
+              {posts.flatMap(post => post.images.map((photo, index) => (
+                <a
+                  className="imageCard"
+                  href={photo.fullsize}
+                  target="_blank"
+                  rel="noreferrer"
+                  key={`${post.uri}-${index}`}
+                  aria-label="Ouvrir l’image"
+                >
+                  <img src={photo.thumb || photo.fullsize} alt="" loading="lazy" />
+                </a>
+              )))}
+            </div>
+          )}
 
           {cursor && activeQuery && (
             <div className="moreWrap">
