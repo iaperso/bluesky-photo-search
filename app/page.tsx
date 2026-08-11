@@ -30,6 +30,9 @@ type SearchResponse = {
 
 type DisplayImage = { key: string; photo: Photo }
 type DisplayVideo = { key: string; video: Video }
+type DisplayMedia =
+  | { key: string; kind: 'image'; photo: Photo }
+  | { key: string; kind: 'video'; video: Video }
 type Mode = 'search' | 'accounts' | 'videos'
 
 const AGE_KEY = 'visual-search-adult-confirmed'
@@ -68,6 +71,26 @@ function randomizedImages(posts: Post[]) {
 function randomizedVideos(posts: Post[]) {
   return shuffle(
     posts.flatMap(post => post.video ? [{ key: post.uri, video: post.video }] : [])
+  )
+}
+
+function randomizedMedia(posts: Post[]): DisplayMedia[] {
+  return shuffle(
+    posts.flatMap(post => {
+      const media: DisplayMedia[] = (post.images ?? []).map((photo, index) => ({
+        key: `${post.uri}-image-${index}`,
+        kind: 'image' as const,
+        photo
+      }))
+      if (post.video) {
+        media.push({
+          key: `${post.uri}-video`,
+          kind: 'video',
+          video: post.video
+        })
+      }
+      return media
+    })
   )
 }
 
@@ -127,6 +150,7 @@ export default function Home() {
   const [posts, setPosts] = useState<Post[]>([])
   const [displayImages, setDisplayImages] = useState<DisplayImage[]>([])
   const [displayVideos, setDisplayVideos] = useState<DisplayVideo[]>([])
+  const [displayMedia, setDisplayMedia] = useState<DisplayMedia[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -191,9 +215,15 @@ export default function Home() {
       if (nextMode === 'videos') {
         setDisplayVideos(randomizedVideos(deduplicated))
         setDisplayImages([])
+        setDisplayMedia([])
+      } else if (nextMode === 'accounts') {
+        setDisplayMedia(randomizedMedia(deduplicated))
+        setDisplayImages([])
+        setDisplayVideos([])
       } else {
         setDisplayImages(randomizedImages(deduplicated))
         setDisplayVideos([])
+        setDisplayMedia([])
       }
 
       setCursor(data.cursor)
@@ -204,6 +234,7 @@ export default function Home() {
         setPosts([])
         setDisplayImages([])
         setDisplayVideos([])
+        setDisplayMedia([])
         setCursor(null)
       }
     } finally {
@@ -248,6 +279,7 @@ export default function Home() {
     setPosts([])
     setDisplayImages([])
     setDisplayVideos([])
+    setDisplayMedia([])
     setCursor(null)
     setActiveQuery('')
     setFailed(false)
@@ -264,6 +296,7 @@ export default function Home() {
     setPosts([])
     setDisplayImages([])
     setDisplayVideos([])
+    setDisplayMedia([])
     setCursor(null)
     setActiveQuery('')
     if (next.length) {
@@ -271,7 +304,11 @@ export default function Home() {
     }
   }
 
-  const hasResults = mode === 'videos' ? displayVideos.length > 0 : displayImages.length > 0
+  const hasResults = mode === 'videos'
+    ? displayVideos.length > 0
+    : mode === 'accounts'
+      ? displayMedia.length > 0
+      : displayImages.length > 0
 
   return (
     <main className="adultMode">
@@ -328,6 +365,16 @@ export default function Home() {
           {mode === 'videos' && displayVideos.length > 0 ? (
             <div className="videoGrid">
               {displayVideos.map(({ key, video }) => <VideoCard key={key} mediaKey={key} video={video} />)}
+            </div>
+          ) : mode === 'accounts' && displayMedia.length > 0 ? (
+            <div className="mixedGrid">
+              {displayMedia.map(media => media.kind === 'image' ? (
+                <a className="imageCard" href={media.photo.fullsize} target="_blank" rel="noreferrer" key={media.key} aria-label="Ouvrir l’image">
+                  <img src={media.photo.thumb || media.photo.fullsize} alt="" loading="lazy" />
+                </a>
+              ) : (
+                <VideoCard key={media.key} mediaKey={media.key} video={media.video} />
+              ))}
             </div>
           ) : displayImages.length > 0 ? (
             <div className="grid">
