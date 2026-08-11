@@ -106,6 +106,29 @@ function pageBoundary(rawPosts: AnyObject[]) {
   return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null
 }
 
+function hashtagSearches(q: string) {
+  const variants = new Set<string>([q])
+
+  for (const rawWord of q.split(/\s+/)) {
+    if (!rawWord || rawWord.startsWith('@') || rawWord.includes('://')) continue
+
+    const word = rawWord
+      .replace(/^#+/, '')
+      .replace(/[^\p{L}\p{N}_]/gu, '')
+      .trim()
+
+    if (word) variants.add(`#${word}`)
+  }
+
+  return [...variants]
+}
+
+function newestBoundary(boundaries: Array<string | null>) {
+  const valid = boundaries.filter((value): value is string => Boolean(value) && !Number.isNaN(Date.parse(value)))
+  if (!valid.length) return null
+  return valid.reduce((latest, value) => Date.parse(value) > Date.parse(latest) ? value : latest)
+}
+
 async function xrpc(path: string, params: URLSearchParams) {
   let lastStatus = 502
   let lastDetails = ''
@@ -206,6 +229,7 @@ export async function GET(request: NextRequest) {
     let nextCursor: string | null = null
     const collected: AnyObject[] = []
     const seen = new Set<string>()
+    const searchVariants = hashtagSearches(q)
 
     if (!requestedCursor) {
       const actors = await actorMatches(q)
@@ -222,32 +246,48 @@ export async function GET(request: NextRequest) {
     const scans = adultOnly ? 4 : 1
 
     for (let scan = 0; scan < scans; scan += 1) {
-      const params = new URLSearchParams({ q, sort, limit: '100' })
-      if (until) params.set('until', until)
+      const results = await Promise.all(searchVariants.map(searchQuery => {
+        const params = new URLSearchParams({ q: searchQuery, sort, limit: '100' })
+        if (until) params.set('until', until)
+        return xrpc('app.bsky.feed.searchPosts', params)
+      }))
 
-      const result = await xrpc('app.bsky.feed.searchPosts', params)
-      if (!result.data) {
+      const successful = results.filter(result => result.data)
+      if (!successful.length) {
+        const failed = results[0]
         return NextResponse.json(
-          { error: `La recherche distante a échoué (${result.status}).`, details: result.details },
-          { status: result.status }
+          { error: `La recherche distante a échoué (${failed.status}).`, details: failed.details },
+          { status: failed.status }
         )
       }
 
-      if (hitsTotal === null && typeof result.data.hitsTotal === 'number') hitsTotal = result.data.hitsTotal
+      if (hitsTotal === null && typeof successful[0].data.hitsTotal === 'number') {
+        hitsTotal = successful[0].data.hitsTotal
+      }
 
-      const rawPosts: AnyObject[] = Array.isArray(result.data.posts) ? result.data.posts : []
-      if (!rawPosts.length) {
+      const boundaries: Array<string | null> = []
+      let foundRawPosts = false
+
+      for (const result of successful) {
+        const rawPosts: AnyObject[] = Array.isArray(result.data.posts) ? result.data.posts : []
+        if (!rawPosts.length) continue
+
+        foundRawPosts = true
+        boundaries.push(pageBoundary(rawPosts))
+
+        for (const post of normalizePosts(rawPosts, adultOnly)) {
+          if (!post?.uri || seen.has(post.uri)) continue
+          seen.add(post.uri)
+          collected.push(post)
+        }
+      }
+
+      if (!foundRawPosts) {
         nextCursor = null
         break
       }
 
-      for (const post of normalizePosts(rawPosts, adultOnly)) {
-        if (!post?.uri || seen.has(post.uri)) continue
-        seen.add(post.uri)
-        collected.push(post)
-      }
-
-      nextCursor = pageBoundary(rawPosts)
+      nextCursor = newestBoundary(boundaries)
       until = nextCursor
       if (!adultOnly || collected.length >= 24 || !nextCursor) break
     }
