@@ -27,8 +27,11 @@ function cleanAccount(value:string){return value.trim().replace(/^@+/,'').replac
 function VideoCard({video,mediaKey}:{video:Video;mediaKey:string}){
  const videoRef=useRef<HTMLVideoElement|null>(null)
  useEffect(()=>{const el=videoRef.current;if(!el)return;if(el.canPlayType('application/vnd.apple.mpegurl')){el.src=video.playlist;return}if(!Hls.isSupported())return;const hls=new Hls({enableWorker:true,lowLatencyMode:true,backBufferLength:30});hls.loadSource(video.playlist);hls.attachMedia(el);return()=>hls.destroy()},[video.playlist])
- const ratio=video.aspectRatio?`${video.aspectRatio.width} / ${video.aspectRatio.height}`:'9 / 16'
- return <div className="videoCard" key={mediaKey} style={{aspectRatio:ratio}}><video ref={videoRef} poster={video.thumbnail??undefined} controls playsInline preload="metadata" aria-label={video.alt||'Vidéo'}/><span className="videoMark" aria-hidden="true"/></div>
+ const width=video.aspectRatio?.width??9
+ const height=video.aspectRatio?.height??16
+ const ratio=`${width} / ${height}`
+ const orientation=width>height*1.12?'videoLandscape':height>width*1.12?'videoPortrait':'videoSquare'
+ return <div className={`videoCard ${orientation}`} key={mediaKey} style={{aspectRatio:ratio}}><video ref={videoRef} poster={video.thumbnail??undefined} controls playsInline preload="metadata" aria-label={video.alt||'Vidéo'}/><span className="videoMark" aria-hidden="true"/></div>
 }
 
 export default function Home(){
