@@ -8,10 +8,8 @@ function accountVideoCards(){return Array.from(document.querySelectorAll<HTMLEle
 
 async function sourceForCard(card:HTMLElement){
  const video=card.querySelector<HTMLVideoElement>('video')
- const start=card.querySelector<HTMLButtonElement>('.videoStart')
  if(!video)return null
- if(!video.currentSrc&&!video.src&&start)start.click()
- for(let i=0;i<24;i++){
+ for(let i=0;i<30;i++){
   const src=video.currentSrc||video.src
   if(src)return{src,poster:card.querySelector<HTMLImageElement>('.videoPoster')?.src||video.poster||null}
   await new Promise(r=>setTimeout(r,50))
@@ -35,10 +33,22 @@ export default function AccountVideoViewer(){
   }finally{changing.current=false}
  },[])
 
+ const activateAndOpen=useCallback((index:number)=>{
+  const cards=accountVideoCards();const card=cards[index];if(!card)return
+  const start=card.querySelector<HTMLButtonElement>('.videoStart')
+  if(start)start.click()
+  window.setTimeout(()=>void openAt(index),30)
+ },[openAt])
+
  const move=useCallback(async(delta:number)=>{
   const cards=accountVideoCards();if(!cards.length)return
   const next=Math.max(0,Math.min(cards.length-1,state.index+delta));if(next===state.index)return
-  videoRef.current?.pause();await openAt(next)
+  videoRef.current?.pause()
+  const card=cards[next]
+  const source=await sourceForCard(card)
+  if(source){setState({open:true,index:next,src:source.src,poster:source.poster});return}
+  const start=card.querySelector<HTMLButtonElement>('.videoStart');if(start)start.click()
+  await openAt(next)
  },[state.index,openAt])
 
  useEffect(()=>{
@@ -48,11 +58,12 @@ export default function AccountVideoViewer(){
    if(!card)return
    const cards=accountVideoCards();const index=cards.indexOf(card);if(index<0)return
    if(target?.closest('video'))return
-   event.preventDefault();event.stopPropagation();void openAt(index)
+   if(target?.closest('.videoStart')){window.setTimeout(()=>void openAt(index),30);return}
+   event.preventDefault();event.stopPropagation();activateAndOpen(index)
   }
   document.addEventListener('click',onClick,true)
   return()=>document.removeEventListener('click',onClick,true)
- },[openAt])
+ },[activateAndOpen,openAt])
 
  useEffect(()=>{
   if(!state.open)return
@@ -63,7 +74,8 @@ export default function AccountVideoViewer(){
  useEffect(()=>{
   if(!state.open||!state.src)return
   const el=videoRef.current;if(!el)return
-  el.src=state.src;el.load();el.play().catch(()=>{})
+  if(el.src!==state.src)el.src=state.src
+  el.load();el.play().catch(()=>{})
  },[state.open,state.src])
 
  if(!state.open)return null
