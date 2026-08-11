@@ -21,14 +21,45 @@ type SearchResponse = {
 }
 
 type Mode = 'all' | 'adult'
+type DisplayImage = { key: string; photo: Photo }
 
 const AGE_KEY = 'visual-search-adult-confirmed'
+
+function shuffle<T>(items: T[]) {
+  const copy = [...items]
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1))
+    ;[copy[index], copy[randomIndex]] = [copy[randomIndex], copy[index]]
+  }
+  return copy
+}
+
+function uniquePosts(posts: Post[]) {
+  const seen = new Set<string>()
+  return posts.filter(post => {
+    if (seen.has(post.uri)) return false
+    seen.add(post.uri)
+    return true
+  })
+}
+
+function randomizedImages(posts: Post[]) {
+  return shuffle(
+    posts.flatMap(post =>
+      post.images.map((photo, index) => ({
+        key: `${post.uri}-${index}`,
+        photo
+      }))
+    )
+  )
+}
 
 export default function Home() {
   const [query, setQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('')
   const [mode, setMode] = useState<Mode>('all')
   const [posts, setPosts] = useState<Post[]>([])
+  const [displayImages, setDisplayImages] = useState<DisplayImage[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -67,21 +98,18 @@ export default function Home() {
       const data: SearchResponse = await response.json()
       if (!response.ok) throw new Error(data.error || 'search')
 
-      setPosts(previous => {
-        const combined = append ? [...previous, ...data.posts] : data.posts
-        const seen = new Set<string>()
-        return combined.filter(post => {
-          if (seen.has(post.uri)) return false
-          seen.add(post.uri)
-          return true
-        })
-      })
+      const combined = append ? [...posts, ...data.posts] : data.posts
+      const deduplicated = uniquePosts(combined)
+
+      setPosts(deduplicated)
+      setDisplayImages(randomizedImages(deduplicated))
       setCursor(data.cursor)
       setActiveQuery(cleaned)
     } catch {
       setFailed(true)
       if (!append) {
         setPosts([])
+        setDisplayImages([])
         setCursor(null)
       }
     } finally {
@@ -99,6 +127,7 @@ export default function Home() {
     setMode(nextMode)
     setFailed(false)
     setPosts([])
+    setDisplayImages([])
     setCursor(null)
     if (activeQuery) runSearch(activeQuery, null, false, nextMode)
   }
@@ -170,22 +199,22 @@ export default function Home() {
         </form>
       </section>
 
-      {(posts.length > 0 || (cursor && activeQuery)) && (
+      {(displayImages.length > 0 || (cursor && activeQuery)) && (
         <section className="resultsSection" aria-label="Résultats">
-          {posts.length > 0 && (
+          {displayImages.length > 0 && (
             <div className="grid">
-              {posts.flatMap(post => post.images.map((photo, index) => (
+              {displayImages.map(({ key, photo }) => (
                 <a
                   className="imageCard"
                   href={photo.fullsize}
                   target="_blank"
                   rel="noreferrer"
-                  key={`${post.uri}-${index}`}
+                  key={key}
                   aria-label="Ouvrir l’image"
                 >
                   <img src={photo.thumb || photo.fullsize} alt="" loading="lazy" />
                 </a>
-              )))}
+              ))}
             </div>
           )}
 
