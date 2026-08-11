@@ -67,7 +67,7 @@ function extractImages(embed: AnyObject | undefined) {
   return []
 }
 
-function normalizePosts(rawPosts: AnyObject[], adultOnly: boolean) {
+function normalizePosts(rawPosts: AnyObject[], adultOnly: boolean): AnyObject[] {
   return rawPosts
     .filter((post: AnyObject) => !adultOnly || hasAdultLabel(post))
     .map((post: AnyObject) => {
@@ -94,7 +94,7 @@ function normalizePosts(rawPosts: AnyObject[], adultOnly: boolean) {
         repostCount: post.repostCount ?? 0
       }
     })
-    .filter(Boolean)
+    .filter((post): post is AnyObject => post !== null)
 }
 
 function pageBoundary(rawPosts: AnyObject[]) {
@@ -156,10 +156,10 @@ function directActorFromQuery(q: string) {
   return null
 }
 
-async function actorMatches(q: string) {
+async function actorMatches(q: string): Promise<string[]> {
   const params = new URLSearchParams({ q: q.replace(/^@+/, ''), limit: '4' })
   const result = await xrpc('app.bsky.actor.searchActors', params)
-  if (!result.data || !Array.isArray(result.data.actors)) return [] as string[]
+  if (!result.data || !Array.isArray(result.data.actors)) return []
 
   return result.data.actors
     .map((actor: AnyObject) => actor?.handle ?? actor?.did)
