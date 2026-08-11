@@ -16,11 +16,11 @@ const SEARCH_ENDPOINTS = [
 function cleanVisibleText(value: string | null | undefined) {
   return (value ?? '')
     .replace(/https?:\/\/(?:www\.)?bsky\.app\/\S*/gi, '')
-    .replace(/\bblue\s*sky\b/gi, '')
-    .replace(/\bbluesky\b/gi, '')
-    .replace(/\.bsky\.social\b/gi, '')
-    .replace(/\bbsky\.app\b/gi, '')
-    .replace(/\bbsky\b/gi, '')
+    .replace(/\.bsky\.social/gi, '')
+    .replace(/blue\s*sky/gi, '')
+    .replace(/bluesky/gi, '')
+    .replace(/bsky\.app/gi, '')
+    .replace(/bsky/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
