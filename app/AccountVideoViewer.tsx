@@ -48,28 +48,35 @@ export default function AccountVideoViewer(){
   if(!state.open||!state.src)return
   const el=videoRef.current;if(!el)return
   if(hlsRef.current){hlsRef.current.destroy();hlsRef.current=null}
-  el.pause();el.removeAttribute('src');el.load()
+  el.pause()
+  el.muted=true
+  el.autoplay=true
+  el.playsInline=true
 
   if(el.canPlayType('application/vnd.apple.mpegurl')){
-   el.src=state.src;el.load();el.play().catch(()=>{})
+   if(el.src!==state.src)el.src=state.src
+   el.load()
+   void el.play().catch(()=>{})
    return
   }
   if(Hls.isSupported()){
-   const hls=new Hls({enableWorker:true,startFragPrefetch:true,autoStartLoad:true,maxBufferLength:15})
-   hlsRef.current=hls;hls.loadSource(state.src);hls.attachMedia(el)
-   hls.on(Hls.Events.MANIFEST_PARSED,()=>el.play().catch(()=>{}))
+   const hls=new Hls({enableWorker:true,startFragPrefetch:true,autoStartLoad:true,maxBufferLength:12,backBufferLength:12})
+   hlsRef.current=hls
+   hls.loadSource(state.src)
+   hls.attachMedia(el)
+   hls.on(Hls.Events.MANIFEST_PARSED,()=>{void el.play().catch(()=>{})})
   }
   return()=>{if(hlsRef.current){hlsRef.current.destroy();hlsRef.current=null}}
  },[state.open,state.src])
 
- if(!state.open)return null
-
- return <div className="accountViewer" role="dialog" aria-modal="true" aria-label="Vidéo plein écran"
-  onTouchStart={e=>{const t=e.touches[0];touchStart.current={x:t.clientX,y:t.clientY}}}
-  onTouchEnd={e=>{const s=touchStart.current;touchStart.current=null;if(!s)return;const t=e.changedTouches[0];const dx=t.clientX-s.x;const dy=t.clientY-s.y;if(Math.max(Math.abs(dx),Math.abs(dy))<45)return;if(Math.abs(dy)>=Math.abs(dx))move(dy<0?1:-1);else move(dx<0?1:-1)}}>
-  <video ref={videoRef} className="accountViewerVideo" poster={state.poster??undefined} controls playsInline preload="auto"/>
-  <button className="accountViewerClose" type="button" aria-label="Fermer" onClick={()=>{videoRef.current?.pause();setState({open:false,index:-1,src:'',poster:null})}}>×</button>
-  <button className="accountViewerPrev" type="button" aria-label="Vidéo précédente" onClick={()=>move(-1)}>‹</button>
-  <button className="accountViewerNext" type="button" aria-label="Vidéo suivante" onClick={()=>move(1)}>›</button>
+ return <div className={`accountViewer ${state.open?'isOpen':''}`} role="dialog" aria-modal={state.open?'true':'false'} aria-label="Vidéo plein écran"
+  onTouchStart={e=>{if(!state.open)return;const t=e.touches[0];touchStart.current={x:t.clientX,y:t.clientY}}}
+  onTouchEnd={e=>{if(!state.open)return;const s=touchStart.current;touchStart.current=null;if(!s)return;const t=e.changedTouches[0];const dx=t.clientX-s.x;const dy=t.clientY-s.y;if(Math.max(Math.abs(dx),Math.abs(dy))<45)return;if(Math.abs(dy)>=Math.abs(dx))move(dy<0?1:-1);else move(dx<0?1:-1)}}>
+  <video ref={videoRef} className="accountViewerVideo" poster={state.poster??undefined} controls playsInline muted preload="auto"/>
+  {state.open&&<>
+   <button className="accountViewerClose" type="button" aria-label="Fermer" onClick={()=>{videoRef.current?.pause();setState({open:false,index:-1,src:'',poster:null})}}>×</button>
+   <button className="accountViewerPrev" type="button" aria-label="Vidéo précédente" onClick={()=>move(-1)}>‹</button>
+   <button className="accountViewerNext" type="button" aria-label="Vidéo suivante" onClick={()=>move(1)}>›</button>
+  </>}
  </div>
 }
