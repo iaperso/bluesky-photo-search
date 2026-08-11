@@ -124,7 +124,9 @@ function hashtagSearches(q: string) {
 }
 
 function newestBoundary(boundaries: Array<string | null>) {
-  const valid = boundaries.filter((value): value is string => Boolean(value) && !Number.isNaN(Date.parse(value)))
+  const valid = boundaries.filter((value): value is string =>
+    typeof value === 'string' && !Number.isNaN(Date.parse(value))
+  )
   if (!valid.length) return null
   return valid.reduce((latest, value) => Date.parse(value) > Date.parse(latest) ? value : latest)
 }
