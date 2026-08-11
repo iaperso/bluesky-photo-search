@@ -20,7 +20,6 @@ type SearchResponse = {
   error?: string
 }
 
-type Mode = 'all' | 'adult'
 type DisplayImage = { key: string; photo: Photo }
 
 const AGE_KEY = 'visual-search-adult-confirmed'
@@ -57,7 +56,6 @@ function randomizedImages(posts: Post[]) {
 export default function Home() {
   const [query, setQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('')
-  const [mode, setMode] = useState<Mode>('all')
   const [posts, setPosts] = useState<Post[]>([])
   const [displayImages, setDisplayImages] = useState<DisplayImage[]>([])
   const [cursor, setCursor] = useState<string | null>(null)
@@ -83,7 +81,7 @@ export default function Home() {
     setAdultConfirmed(true)
   }
 
-  async function runSearch(nextQuery: string, nextCursor?: string | null, append = false, nextMode: Mode = mode) {
+  async function runSearch(nextQuery: string, nextCursor?: string | null, append = false) {
     const cleaned = nextQuery.trim()
     if (!cleaned || loading) return
 
@@ -91,7 +89,7 @@ export default function Home() {
     setFailed(false)
 
     try {
-      const params = new URLSearchParams({ q: cleaned, sort: 'latest', mode: nextMode })
+      const params = new URLSearchParams({ q: cleaned, sort: 'latest', mode: 'adult' })
       if (nextCursor) params.set('cursor', nextCursor)
 
       const response = await fetch(`/api/search?${params.toString()}`)
@@ -122,18 +120,8 @@ export default function Home() {
     runSearch(query)
   }
 
-  function switchMode(nextMode: Mode) {
-    if (nextMode === mode || loading) return
-    setMode(nextMode)
-    setFailed(false)
-    setPosts([])
-    setDisplayImages([])
-    setCursor(null)
-    if (activeQuery) runSearch(activeQuery, null, false, nextMode)
-  }
-
   return (
-    <main className={mode === 'adult' ? 'adultMode' : ''}>
+    <main className="adultMode">
       {ageChecked && !adultConfirmed && (
         <div className="ageGate" role="dialog" aria-modal="true" aria-labelledby="ageGateTitle">
           <div className="ageGateGlow" aria-hidden="true" />
@@ -150,32 +138,10 @@ export default function Home() {
       <section className="hero">
         <div className="topLine">
           <div className="eyebrow">Recherche visuelle</div>
-          <div className="modeTabs" role="tablist" aria-label="Mode de recherche">
-            <button
-              className={mode === 'all' ? 'active' : ''}
-              type="button"
-              role="tab"
-              aria-selected={mode === 'all'}
-              aria-label="Recherche générale"
-              onClick={() => switchMode('all')}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="10.5" cy="10.5" r="5.5" />
-                <path d="M14.7 14.7 20 20" />
-              </svg>
-            </button>
-            <button
-              className={mode === 'adult' ? 'active adultTab' : 'adultTab'}
-              type="button"
-              role="tab"
-              aria-selected={mode === 'adult'}
-              aria-label="Contenu adulte uniquement"
-              onClick={() => switchMode('adult')}
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M13.7 2.8c.4 3.2-1.2 4.6-2.5 6.2-1.1 1.4-2 2.7-1.2 4.6.5 1.1 1.4 1.8 2.5 2.1-.1-2.1 1-3.4 2.5-4.9 2.2 1.8 3.8 4 3.8 6.6A6.7 6.7 0 0 1 12 24a6.8 6.8 0 0 1-6.8-6.7c0-4.8 3.5-7.5 5.6-10.2 1.1-1.4 2-2.7 2.9-4.3Z" />
-              </svg>
-            </button>
+          <div className="adultIndicator" aria-hidden="true">
+            <svg viewBox="0 0 24 24">
+              <path d="M13.7 2.8c.4 3.2-1.2 4.6-2.5 6.2-1.1 1.4-2 2.7-1.2 4.6.5 1.1 1.4 1.8 2.5 2.1-.1-2.1 1-3.4 2.5-4.9 2.2 1.8 3.8 4 3.8 6.6A6.7 6.7 0 0 1 12 24a6.8 6.8 0 0 1-6.8-6.7c0-4.8 3.5-7.5 5.6-10.2 1.1-1.4 2-2.7 2.9-4.3Z" />
+            </svg>
           </div>
         </div>
 
