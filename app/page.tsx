@@ -138,10 +138,12 @@ export default function Home() {
       <section className="hero">
         <div className="topLine">
           <div className="eyebrow">Recherche visuelle</div>
-          <div className="adultIndicator" aria-hidden="true">
-            <svg viewBox="0 0 24 24">
-              <path d="M13.7 2.8c.4 3.2-1.2 4.6-2.5 6.2-1.1 1.4-2 2.7-1.2 4.6.5 1.1 1.4 1.8 2.5 2.1-.1-2.1 1-3.4 2.5-4.9 2.2 1.8 3.8 4 3.8 6.6A6.7 6.7 0 0 1 12 24a6.8 6.8 0 0 1-6.8-6.7c0-4.8 3.5-7.5 5.6-10.2 1.1-1.4 2-2.7 2.9-4.3Z" />
-            </svg>
+          <div className="modeTabs" aria-hidden="true">
+            <button className="active adultTab" type="button" tabIndex={-1}>
+              <svg viewBox="0 0 24 24">
+                <path d="M13.7 2.8c.4 3.2-1.2 4.6-2.5 6.2-1.1 1.4-2 2.7-1.2 4.6.5 1.1 1.4 1.8 2.5 2.1-.1-2.1 1-3.4 2.5-4.9 2.2 1.8 3.8 4 3.8 6.6A6.7 6.7 0 0 1 12 24a6.8 6.8 0 0 1-6.8-6.7c0-4.8 3.5-7.5 5.6-10.2 1.1-1.4 2-2.7 2.9-4.3Z" />
+              </svg>
+            </button>
           </div>
         </div>
 
