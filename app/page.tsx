@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 
 type Photo = { thumb: string; fullsize: string; alt: string }
 type Post = {
@@ -22,6 +22,8 @@ type SearchResponse = {
 
 type Mode = 'all' | 'adult'
 
+const AGE_KEY = 'visual-search-adult-confirmed'
+
 export default function Home() {
   const [query, setQuery] = useState('')
   const [activeQuery, setActiveQuery] = useState('')
@@ -30,6 +32,25 @@ export default function Home() {
   const [cursor, setCursor] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [failed, setFailed] = useState(false)
+  const [ageChecked, setAgeChecked] = useState(false)
+  const [adultConfirmed, setAdultConfirmed] = useState(false)
+
+  useEffect(() => {
+    try {
+      setAdultConfirmed(window.localStorage.getItem(AGE_KEY) === 'yes')
+    } catch {
+      setAdultConfirmed(false)
+    } finally {
+      setAgeChecked(true)
+    }
+  }, [])
+
+  function confirmAdult() {
+    try {
+      window.localStorage.setItem(AGE_KEY, 'yes')
+    } catch {}
+    setAdultConfirmed(true)
+  }
 
   async function runSearch(nextQuery: string, nextCursor?: string | null, append = false, nextMode: Mode = mode) {
     const cleaned = nextQuery.trim()
@@ -76,6 +97,19 @@ export default function Home() {
 
   return (
     <main className={mode === 'adult' ? 'adultMode' : ''}>
+      {ageChecked && !adultConfirmed && (
+        <div className="ageGate" role="dialog" aria-modal="true" aria-labelledby="ageGateTitle">
+          <div className="ageGateGlow" aria-hidden="true" />
+          <div className="ageGateCard">
+            <div className="ageMark" aria-hidden="true">18+</div>
+            <h1 id="ageGateTitle">Accès réservé aux adultes</h1>
+            <p>Je certifie avoir au moins 18 ans et être autorisé à consulter du contenu pour adultes dans mon pays.</p>
+            <button className="ageConfirm" type="button" onClick={confirmAdult}>J’ai 18 ans ou plus</button>
+            <a className="ageExit" href="https://bsky.app">Je suis mineur</a>
+          </div>
+        </div>
+      )}
+
       <section className="hero">
         <div className="topLine">
           <div className="eyebrow">Recherche visuelle</div>
