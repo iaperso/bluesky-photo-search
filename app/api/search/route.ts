@@ -71,8 +71,8 @@ function extractImages(embed: AnyObject | undefined) {
   return []
 }
 
-function normalizeResults(data: AnyObject, adultOnly: boolean): SearchResult {
-  const posts = (data.posts ?? [])
+function normalizePosts(rawPosts: AnyObject[], adultOnly: boolean) {
+  return rawPosts
     .filter((post: AnyObject) => !adultOnly || hasAdultLabel(post))
     .map((post: AnyObject) => {
       const images = extractImages(post.embed)
@@ -99,28 +99,46 @@ function normalizeResults(data: AnyObject, adultOnly: boolean): SearchResult {
       }
     })
     .filter(Boolean)
-
-  return {
-    posts,
-    cursor: data.cursor ?? null,
-    hitsTotal: data.hitsTotal ?? null
-  }
 }
 
-async function queryEndpoint(url: string, params: URLSearchParams) {
-  return fetch(`${url}?${params.toString()}`, {
-    headers: {
-      Accept: 'application/json',
-      'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)',
-      'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
-    },
-    cache: 'no-store'
-  })
+function pageBoundary(rawPosts: AnyObject[]) {
+  const last = rawPosts.at(-1)
+  const value = last?.indexedAt ?? last?.record?.createdAt
+  return typeof value === 'string' && !Number.isNaN(Date.parse(value)) ? value : null
+}
+
+async function queryBatch(params: URLSearchParams) {
+  let lastStatus = 502
+  let lastDetails = ''
+
+  for (const endpoint of SEARCH_ENDPOINTS) {
+    const response = await fetch(`${endpoint}?${params.toString()}`, {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
+      },
+      cache: 'no-store'
+    })
+
+    if (response.ok) {
+      return { data: await response.json(), status: 200, details: '' }
+    }
+
+    lastStatus = response.status
+    lastDetails = await response.text()
+
+    if (response.status !== 403 && response.status !== 429 && response.status < 500) {
+      break
+    }
+  }
+
+  return { data: null, status: lastStatus, details: lastDetails }
 }
 
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim()
-  const cursor = request.nextUrl.searchParams.get('cursor') ?? undefined
+  const requestedCursor = request.nextUrl.searchParams.get('cursor')?.trim() || null
   const sort = request.nextUrl.searchParams.get('sort') === 'top' ? 'top' : 'latest'
   const adultOnly = request.nextUrl.searchParams.get('mode') === 'adult'
 
@@ -128,36 +146,56 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'La recherche est vide.' }, { status: 400 })
   }
 
-  const params = new URLSearchParams({ q, sort, limit: '50' })
-  if (cursor) params.set('cursor', cursor)
-
-  let lastStatus = 502
-  let lastDetails = ''
+  let until = requestedCursor && !Number.isNaN(Date.parse(requestedCursor)) ? requestedCursor : null
+  let hitsTotal: number | null = null
+  let nextCursor: string | null = null
+  const collected: AnyObject[] = []
+  const seen = new Set<string>()
+  const scans = adultOnly ? 4 : 1
 
   try {
-    for (const endpoint of SEARCH_ENDPOINTS) {
-      const response = await queryEndpoint(endpoint, params)
+    for (let scan = 0; scan < scans; scan += 1) {
+      const params = new URLSearchParams({ q, sort, limit: '100' })
+      if (until) params.set('until', until)
 
-      if (response.ok) {
-        const data = await response.json()
-        return NextResponse.json(normalizeResults(data, adultOnly))
+      const result = await queryBatch(params)
+      if (!result.data) {
+        return NextResponse.json(
+          { error: `La recherche distante a échoué (${result.status}).`, details: result.details },
+          { status: result.status }
+        )
       }
 
-      lastStatus = response.status
-      lastDetails = await response.text()
+      if (hitsTotal === null && typeof result.data.hitsTotal === 'number') {
+        hitsTotal = result.data.hitsTotal
+      }
 
-      if (response.status !== 403 && response.status !== 429 && response.status < 500) {
+      const rawPosts: AnyObject[] = Array.isArray(result.data.posts) ? result.data.posts : []
+      if (!rawPosts.length) {
+        nextCursor = null
         break
       }
+
+      const normalized = normalizePosts(rawPosts, adultOnly)
+      for (const post of normalized) {
+        if (!post?.uri || seen.has(post.uri)) continue
+        seen.add(post.uri)
+        collected.push(post)
+      }
+
+      nextCursor = pageBoundary(rawPosts)
+      until = nextCursor
+
+      if (!adultOnly || collected.length >= 20 || !nextCursor) break
     }
 
-    return NextResponse.json(
-      {
-        error: `La recherche distante a échoué (${lastStatus}).`,
-        details: lastDetails
-      },
-      { status: lastStatus }
-    )
+    const response: SearchResult = {
+      posts: collected,
+      cursor: nextCursor,
+      hitsTotal
+    }
+
+    return NextResponse.json(response)
   } catch {
     return NextResponse.json(
       { error: 'Impossible de joindre le service de recherche pour le moment.' },
