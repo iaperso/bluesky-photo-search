@@ -13,6 +13,8 @@ const SEARCH_ENDPOINTS = [
   'https://api.bsky.app/xrpc/app.bsky.feed.searchPosts'
 ]
 
+const ADULT_LABELS = new Set(['porn', 'sexual'])
+
 function cleanVisibleText(value: string | null | undefined) {
   return (value ?? '')
     .replace(/https?:\/\/(?:www\.)?bsky\.app\/\S*/gi, '')
@@ -27,6 +29,18 @@ function cleanVisibleText(value: string | null | undefined) {
 
 function cleanHandle(value: string | null | undefined) {
   return cleanVisibleText(value).replace(/^@+/, '') || 'auteur'
+}
+
+function hasAdultLabel(post: AnyObject) {
+  const serviceLabels = Array.isArray(post.labels)
+    ? post.labels.some((label: AnyObject) => !label?.neg && ADULT_LABELS.has(String(label?.val ?? '').toLowerCase()))
+    : false
+
+  const selfLabels = Array.isArray(post.record?.labels?.values)
+    ? post.record.labels.values.some((label: AnyObject) => ADULT_LABELS.has(String(label?.val ?? '').toLowerCase()))
+    : false
+
+  return serviceLabels || selfLabels
 }
 
 function extractImages(embed: AnyObject | undefined) {
@@ -57,8 +71,9 @@ function extractImages(embed: AnyObject | undefined) {
   return []
 }
 
-function normalizeResults(data: AnyObject): SearchResult {
+function normalizeResults(data: AnyObject, adultOnly: boolean): SearchResult {
   const posts = (data.posts ?? [])
+    .filter((post: AnyObject) => !adultOnly || hasAdultLabel(post))
     .map((post: AnyObject) => {
       const images = extractImages(post.embed)
       if (!images.length) return null
@@ -107,6 +122,7 @@ export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim()
   const cursor = request.nextUrl.searchParams.get('cursor') ?? undefined
   const sort = request.nextUrl.searchParams.get('sort') === 'top' ? 'top' : 'latest'
+  const adultOnly = request.nextUrl.searchParams.get('mode') === 'adult'
 
   if (!q) {
     return NextResponse.json({ error: 'La recherche est vide.' }, { status: 400 })
@@ -124,7 +140,7 @@ export async function GET(request: NextRequest) {
 
       if (response.ok) {
         const data = await response.json()
-        return NextResponse.json(normalizeResults(data))
+        return NextResponse.json(normalizeResults(data, adultOnly))
       }
 
       lastStatus = response.status
