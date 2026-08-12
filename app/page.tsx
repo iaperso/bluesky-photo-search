@@ -7,9 +7,9 @@ type Photo={thumb:string;fullsize:string;alt:string}
 type Video={playlist:string;thumbnail:string|null;alt:string;aspectRatio:{width:number;height:number}|null}
 type Post={uri:string;cid:string;text:string;createdAt:string;author:{handle:string;displayName:string;avatar:string|null};images?:Photo[];video?:Video;likeCount:number;repostCount:number}
 type SearchResponse={posts:Post[];cursor:string|null;error?:string}
-type DisplayImage={key:string;photo:Photo}
-type DisplayVideo={key:string;video:Video}
-type DisplayMedia={key:string;kind:'image';photo:Photo}|{key:string;kind:'video';video:Video}
+type DisplayImage={key:string;photo:Photo;author:string}
+type DisplayVideo={key:string;video:Video;author:string}
+type DisplayMedia={key:string;kind:'image';photo:Photo;author:string}|{key:string;kind:'video';video:Video;author:string}
 type Mode='search'|'accounts'|'videos'
 
 const AGE_KEY='visual-search-adult-confirmed'
@@ -20,14 +20,14 @@ const DISCOVERY_QUERY='__discovery__'
 function shuffle<T>(items:T[]){const copy=[...items];for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]]}return copy}
 function uniquePosts(posts:Post[]){const seen=new Set<string>();return posts.filter(post=>{if(seen.has(post.uri))return false;seen.add(post.uri);return true})}
 function byLikes(posts:Post[]){return [...posts].sort((a,b)=>(b.likeCount??0)-(a.likeCount??0))}
-function imageItems(posts:Post[]):DisplayImage[]{return posts.flatMap(post=>(post.images??[]).map((photo,index)=>({key:`${post.uri}-${index}`,photo})))}
-function videoItems(posts:Post[]):DisplayVideo[]{const seen=new Set<string>();return posts.flatMap(post=>{if(!post.video||seen.has(post.video.playlist))return[];seen.add(post.video.playlist);return[{key:post.video.playlist,video:post.video}]})}
-function mediaItems(posts:Post[]):DisplayMedia[]{const seenVideos=new Set<string>();return posts.flatMap(post=>{const media:DisplayMedia[]=(post.images??[]).map((photo,index)=>({key:`${post.uri}-image-${index}`,kind:'image' as const,photo}));if(post.video&&!seenVideos.has(post.video.playlist)){seenVideos.add(post.video.playlist);media.push({key:post.video.playlist,kind:'video',video:post.video})}return media})}
+function imageItems(posts:Post[]):DisplayImage[]{return posts.flatMap(post=>(post.images??[]).map((photo,index)=>({key:`${post.uri}-${index}`,photo,author:post.author.handle})))}
+function videoItems(posts:Post[]):DisplayVideo[]{const seen=new Set<string>();return posts.flatMap(post=>{if(!post.video||seen.has(post.video.playlist))return[];seen.add(post.video.playlist);return[{key:post.video.playlist,video:post.video,author:post.author.handle}]})}
+function mediaItems(posts:Post[]):DisplayMedia[]{const seenVideos=new Set<string>();return posts.flatMap(post=>{const media:DisplayMedia[]=(post.images??[]).map((photo,index)=>({key:`${post.uri}-image-${index}`,kind:'image' as const,photo,author:post.author.handle}));if(post.video&&!seenVideos.has(post.video.playlist)){seenVideos.add(post.video.playlist);media.push({key:post.video.playlist,kind:'video',video:post.video,author:post.author.handle})}return media})}
 function cleanAccount(value:string){return value.trim().replace(/^@+/,'').replace(/[\s,;]+/g,'')}
 function freshPosts(existing:Post[],incoming:Post[]){const uris=new Set(existing.map(post=>post.uri));const videos=new Set(existing.flatMap(post=>post.video?[post.video.playlist]:[]));return uniquePosts(incoming).filter(post=>{if(uris.has(post.uri))return false;if(post.video&&videos.has(post.video.playlist))return false;return true})}
 function blendPersonalized(primary:Post[],discovery:Post[]){const main=uniquePosts(primary);const extra=uniquePosts(discovery).filter(post=>!main.some(item=>item.uri===post.uri));if(!extra.length)return main;const mixed:Post[]=[];let e=0;for(let i=0;i<main.length;i++){mixed.push(main[i]);if((i+1)%4===0&&e<extra.length)mixed.push(extra[e++])}return uniquePosts([...mixed,...extra.slice(e,Math.min(e+3,extra.length))])}
 
-function VideoCard({video,mediaKey}:{video:Video;mediaKey:string}){
+function VideoCard({video,mediaKey,author}:{video:Video;mediaKey:string;author:string}){
  const videoRef=useRef<HTMLVideoElement|null>(null)
  const hlsRef=useRef<Hls|null>(null)
  const[started,setStarted]=useState(false)
@@ -55,7 +55,7 @@ function VideoCard({video,mediaKey}:{video:Video;mediaKey:string}){
 
  async function startPlayback(){if(!started){setStarted(true);requestAnimationFrame(()=>videoRef.current?.play().catch(()=>{}));return}if(failed){setFailed(false);setReady(false);const el=videoRef.current;if(el){el.src=video.playlist;el.load();el.play().catch(()=>{})}}}
 
- return <div className={`videoCard mediaViewerItem ${orientation} ${started?'videoStarted':''} ${failed?'videoFailed':''}`} key={mediaKey} style={{aspectRatio:ratio}} data-media-kind="video" data-media-src={video.playlist} data-media-poster={video.thumbnail??''} data-video-src={video.playlist} data-video-poster={video.thumbnail??''}>
+ return <div className={`videoCard mediaViewerItem ${orientation} ${started?'videoStarted':''} ${failed?'videoFailed':''}`} key={mediaKey} style={{aspectRatio:ratio}} data-media-kind="video" data-media-src={video.playlist} data-media-poster={video.thumbnail??''} data-media-author={author} data-video-src={video.playlist} data-video-poster={video.thumbnail??''}>
   <video ref={videoRef} controls={started} playsInline preload="none" aria-label={video.alt||'Vidéo'} onPlay={()=>setReady(true)}/>
   {!ready&&video.thumbnail&&<img className="videoPoster" src={video.thumbnail} alt="" loading="eager" decoding="async"/>}
   {!ready&&<button className="videoStart" type="button" onClick={startPlayback} aria-label={failed?'Réessayer la vidéo':'Lire la vidéo'}><span/></button>}
@@ -119,7 +119,7 @@ export default function Home(){
   {mode==='accounts'&&accounts.length>0&&<div className="accountRail" aria-label="Comptes suivis">{accounts.map(account=><button className="accountChip" key={account} type="button" onClick={()=>removeAccount(account)} aria-label={`Retirer ${account}`}><span>@{account}</span><i aria-hidden="true">×</i></button>)}<span className="accountCount">{accounts.length}/{MAX_ACCOUNTS}</span></div>}
   </section>
   {hasResults&&<section className="resultsSection" aria-label="Résultats">
-   {mode==='videos'&&displayVideos.length>0?<div className="videoGrid">{displayVideos.map(({key,video})=><VideoCard key={key} mediaKey={key} video={video}/>)}</div>:mode==='accounts'&&displayMedia.length>0?<div className="mixedGrid">{displayMedia.map(media=>media.kind==='image'?<a className="imageCard mediaViewerItem" href={media.photo.fullsize} key={media.key} aria-label="Ouvrir l’image" data-media-kind="image" data-media-src={media.photo.fullsize} data-media-poster={media.photo.thumb||media.photo.fullsize}><img src={media.photo.thumb||media.photo.fullsize} alt="" loading="lazy"/></a>:<VideoCard key={media.key} mediaKey={media.key} video={media.video}/>)}</div>:displayImages.length>0?<div className="grid">{displayImages.map(({key,photo})=><a className="imageCard mediaViewerItem" href={photo.fullsize} key={key} aria-label="Ouvrir l’image" data-media-kind="image" data-media-src={photo.fullsize} data-media-poster={photo.thumb||photo.fullsize}><img src={photo.thumb||photo.fullsize} alt="" loading="lazy"/></a>)}</div>:null}
+   {mode==='videos'&&displayVideos.length>0?<div className="videoGrid">{displayVideos.map(({key,video,author})=><VideoCard key={key} mediaKey={key} video={video} author={author}/>)}</div>:mode==='accounts'&&displayMedia.length>0?<div className="mixedGrid">{displayMedia.map(media=>media.kind==='image'?<a className="imageCard mediaViewerItem" href={media.photo.fullsize} key={media.key} aria-label="Ouvrir l’image" data-media-kind="image" data-media-src={media.photo.fullsize} data-media-poster={media.photo.thumb||media.photo.fullsize} data-media-author={media.author}><img src={media.photo.thumb||media.photo.fullsize} alt="" loading="lazy"/></a>:<VideoCard key={media.key} mediaKey={media.key} video={media.video} author={media.author}/>)}</div>:displayImages.length>0?<div className="grid">{displayImages.map(({key,photo,author})=><a className="imageCard mediaViewerItem" href={photo.fullsize} key={key} aria-label="Ouvrir l’image" data-media-kind="image" data-media-src={photo.fullsize} data-media-poster={photo.thumb||photo.fullsize} data-media-author={author}><img src={photo.thumb||photo.fullsize} alt="" loading="lazy"/></a>)}</div>:null}
    {cursor&&activeQuery&&activeQuery!==DISCOVERY_QUERY&&<div className={`infiniteSentinel ${loading?'loading':''}`} ref={infiniteSentinel} aria-hidden="true"><span/></div>}
   </section>}
  </main>
