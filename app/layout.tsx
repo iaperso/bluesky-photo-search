@@ -7,7 +7,6 @@ import './viewer.css'
 import './premium-header.css'
 import './flow-premium.css'
 import MediaViewer from './MediaViewer'
-import AccountNames from './AccountNames'
 
 export const metadata: Metadata = {
   title: 'VISUAL SEARCH',
@@ -19,7 +18,6 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="fr">
       <body>
         {children}
-        <AccountNames />
         <MediaViewer />
       </body>
     </html>
