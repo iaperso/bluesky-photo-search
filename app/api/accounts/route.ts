@@ -76,7 +76,7 @@ function extractVideo(embed: AnyObject | undefined) {
   }
 }
 
-function normalizePost(post: AnyObject) {
+function normalizePost(post: AnyObject, feedIndexedAt?: string | null) {
   if (!hasAdultLabel(post)) return null
 
   const images = extractImages(post.embed)
@@ -86,13 +86,14 @@ function normalizePost(post: AnyObject) {
   const rawHandle = post.author?.handle ?? post.author?.did ?? 'auteur'
   const handle = cleanHandle(rawHandle)
   const displayName = cleanVisibleText(post.author?.displayName) || handle
+  const feedTime = feedIndexedAt ?? post.indexedAt ?? post.record?.createdAt
 
   return {
     uri: post.uri,
     cid: post.cid,
     text: cleanVisibleText(post.record?.text),
-    createdAt: post.record?.createdAt ?? post.indexedAt,
-    indexedAt: post.indexedAt,
+    createdAt: feedTime,
+    indexedAt: feedTime,
     author: {
       handle,
       displayName,
@@ -160,9 +161,16 @@ async function fetchActor(actor: string, cursor: string | null) {
   if (!result.data) return { actor, posts: [] as AnyObject[], cursor: null as string | null }
 
   const posts = (Array.isArray(result.data.feed) ? result.data.feed : [])
-    .map((item: AnyObject) => item?.post)
-    .filter(Boolean)
-    .map(normalizePost)
+    .map((item: AnyObject) => {
+      const post = item?.post
+      if (!post) return null
+      const feedIndexedAt = typeof item?.reason?.indexedAt === 'string'
+        ? item.reason.indexedAt
+        : typeof post.indexedAt === 'string'
+          ? post.indexedAt
+          : null
+      return normalizePost(post, feedIndexedAt)
+    })
     .filter(Boolean) as AnyObject[]
 
   return { actor, posts, cursor: result.data.cursor ?? null }
