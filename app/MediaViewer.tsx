@@ -36,9 +36,11 @@ export default function MediaViewer(){
     const response=await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(author)}`)
     if(response.ok){const profile=await response.json();if(typeof profile?.handle==='string'&&profile.handle)author=profile.handle}
    }
+   const finalAuthor=author
+   if(!finalAuthor)return
    const saved=JSON.parse(localStorage.getItem(ACCOUNTS_KEY)??'[]')
    const current=Array.isArray(saved)?saved.filter((item):item is string=>typeof item==='string'):[]
-   if(!current.includes(author)&&current.length<MAX_ACCOUNTS){const next=[...current,author];localStorage.setItem(ACCOUNTS_KEY,JSON.stringify(next));window.dispatchEvent(new CustomEvent('visual-search-accounts-changed',{detail:next}))}
+   if(!current.includes(finalAuthor)&&current.length<MAX_ACCOUNTS){const next=[...current,finalAuthor];localStorage.setItem(ACCOUNTS_KEY,JSON.stringify(next));window.dispatchEvent(new CustomEvent('visual-search-accounts-changed',{detail:next}))}
    setFlowed(true)
   }catch{}
  }
