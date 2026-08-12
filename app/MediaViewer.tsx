@@ -9,7 +9,8 @@ const ACCOUNTS_KEY='visual-search-accounts-v2'
 const MAX_ACCOUNTS=20
 
 function mediaCards(){return Array.from(document.querySelectorAll<HTMLElement>('.mediaViewerItem[data-media-kind][data-media-src]'))}
-function sourceForCard(card:HTMLElement){const src=card.dataset.mediaSrc||'';const kind=card.dataset.mediaKind==='video'?'video':'image';if(!src)return null;return{kind:kind as MediaKind,src,poster:card.dataset.mediaPoster||null,author:card.dataset.mediaAuthor||null}}
+function actorFromMedia(src:string){try{return decodeURIComponent(src).match(/did:plc:[a-z0-9]+/i)?.[0]??null}catch{return src.match(/did:plc:[a-z0-9]+/i)?.[0]??null}}
+function sourceForCard(card:HTMLElement){const src=card.dataset.mediaSrc||'';const kind=card.dataset.mediaKind==='video'?'video':'image';if(!src)return null;const accountMedia=Boolean(card.closest('.mixedGrid'));return{kind:kind as MediaKind,src,poster:card.dataset.mediaPoster||null,author:accountMedia?(card.dataset.mediaAuthor||actorFromMedia(src)):null}}
 
 export default function MediaViewer(){
  const[state,setState]=useState<ViewerState>({open:false,index:-1,kind:'image',src:'',poster:null,author:null})
@@ -27,10 +28,14 @@ export default function MediaViewer(){
  useEffect(()=>{if(!state.open)return;const next=mediaCards()[state.index+1];if(!next)return;const source=sourceForCard(next);if(source?.kind==='image'){const img=new Image();img.src=source.src}},[state.open,state.index])
 
  function close(){videoRef.current?.pause();setState({open:false,index:-1,kind:'image',src:'',poster:null,author:null})}
- function addFlow(){
-  const author=state.author?.trim().replace(/^@+/,'')
+ async function addFlow(){
+  let author=state.author?.trim().replace(/^@+/,'')
   if(!author)return
   try{
+   if(author.startsWith('did:')){
+    const response=await fetch(`https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(author)}`)
+    if(response.ok){const profile=await response.json();if(typeof profile?.handle==='string'&&profile.handle)author=profile.handle}
+   }
    const saved=JSON.parse(localStorage.getItem(ACCOUNTS_KEY)??'[]')
    const current=Array.isArray(saved)?saved.filter((item):item is string=>typeof item==='string'):[]
    if(!current.includes(author)&&current.length<MAX_ACCOUNTS){const next=[...current,author];localStorage.setItem(ACCOUNTS_KEY,JSON.stringify(next));window.dispatchEvent(new CustomEvent('visual-search-accounts-changed',{detail:next}))}
