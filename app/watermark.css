@@ -1,0 +1,4 @@
+/* Image filigrane embarquée dans le fond principal. */
+.adultMode{position:relative;isolation:isolate}
+.adultMode::before{content:"";position:fixed;left:0;right:0;top:170px;bottom:0;z-index:-2;pointer-events:none;background-image:linear-gradient(180deg,rgba(0,0,0,.40) 0%,rgba(0,0,0,.66) 42%,rgba(0,0,0,.92) 100%),url("data:image/webp;base64,UklGRoYBAABXRUJQVlA4WAoAAAAQAAAAhwMAVQQASUNDUBgCAAAAAAKCAAAAbW50clJHQiBYWVogB+gAAQABAAAAAAAAAAAA");background-position:center top;background-repeat:no-repeat;background-size:min(980px,92vw) auto;opacity:.18;filter:saturate(.65) contrast(1.05)}
+@media(max-width:560px){.adultMode::before{top:180px;background-size:115vw auto;opacity:.14;background-position:center 35px}}
