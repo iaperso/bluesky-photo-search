@@ -8,6 +8,7 @@ import './premium-header.css'
 import './flow-premium.css'
 import './watermark.css'
 import MediaViewer from './MediaViewer'
+import AndroidVideoBridge from './AndroidVideoBridge'
 
 export const metadata: Metadata = {
   title: 'VISUAL SEARCH',
@@ -19,6 +20,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="fr">
       <body>
         {children}
+        <AndroidVideoBridge />
         <MediaViewer />
       </body>
     </html>
