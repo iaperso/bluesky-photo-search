@@ -17,11 +17,24 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Check Vercel token
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "::error::VERCEL_TOKEN secret is missing"
+            exit 1
+          fi
+          echo "Vercel token available"
       - name: Configure Vercel project
         run: |
           mkdir -p .vercel
           printf '{"orgId":"team_053eyL6zfV5ua93KNrwDxdsh","projectId":"prj_eHPpUCUIskymx7Ddfm7bOc7DOdaE"}' > .vercel/project.json
       - name: Build production
-        run: npx vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel build --prod --token="$VERCEL_TOKEN"
       - name: Deploy production
-        run: npx vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: npx vercel deploy --prebuilt --prod --token="$VERCEL_TOKEN"
