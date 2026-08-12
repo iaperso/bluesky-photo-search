@@ -1,0 +1,8 @@
+{
+  "name": "Visual Search",
+  "target": "production",
+  "branding": "18+flow",
+  "theme": "black-red-premium",
+  "sourceLabel": null,
+  "notes": "Premium sticky header with enlarged branding and navigation pictograms."
+}
