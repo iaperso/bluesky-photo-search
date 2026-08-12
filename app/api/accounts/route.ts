@@ -5,6 +5,7 @@ type CursorMap = Record<string, string | null>
 
 const HOSTS = ['https://public.api.bsky.app', 'https://api.bsky.app']
 const ADULT_LABELS = new Set(['porn', 'sexual'])
+const FLOW_COOKIE = 'visual-search-flow-accounts'
 
 function cleanVisibleText(value: string | null | undefined) {
   return (value ?? '')
@@ -76,8 +77,8 @@ function extractVideo(embed: AnyObject | undefined) {
   }
 }
 
-function normalizePost(post: AnyObject, feedIndexedAt?: string | null) {
-  if (!hasAdultLabel(post)) return null
+function normalizePost(post: AnyObject, feedIndexedAt?: string | null, allowUnlabeled = false) {
+  if (!allowUnlabeled && !hasAdultLabel(post)) return null
 
   const images = extractImages(post.embed)
   const video = extractVideo(post.embed)
@@ -138,6 +139,21 @@ function parseActors(value: string) {
   )].slice(0, 20)
 }
 
+function parseFlowActors(value: string | undefined) {
+  if (!value) return new Set<string>()
+  try {
+    return new Set(
+      decodeURIComponent(value)
+        .split(',')
+        .map(item => item.trim().replace(/^@+/, '').toLowerCase())
+        .filter(Boolean)
+        .slice(0, 20)
+    )
+  } catch {
+    return new Set<string>()
+  }
+}
+
 function decodeCursor(value: string | null): CursorMap {
   if (!value) return {}
   try {
@@ -153,7 +169,7 @@ function encodeCursor(value: CursorMap) {
   return Buffer.from(JSON.stringify(active), 'utf8').toString('base64url')
 }
 
-async function fetchActor(actor: string, cursor: string | null) {
+async function fetchActor(actor: string, cursor: string | null, allowUnlabeled: boolean) {
   const params = new URLSearchParams({ actor, limit: '100', filter: 'posts_with_media', includePins: 'false' })
   if (cursor) params.set('cursor', cursor)
 
@@ -169,7 +185,7 @@ async function fetchActor(actor: string, cursor: string | null) {
         : typeof post.indexedAt === 'string'
           ? post.indexedAt
           : null
-      return normalizePost(post, feedIndexedAt)
+      return normalizePost(post, feedIndexedAt, allowUnlabeled)
     })
     .filter(Boolean) as AnyObject[]
 
@@ -181,10 +197,11 @@ export async function GET(request: NextRequest) {
   const actors = parseActors(q)
   if (!actors.length) return NextResponse.json({ error: 'Aucun compte.' }, { status: 400 })
 
+  const flowActors = parseFlowActors(request.cookies.get(FLOW_COOKIE)?.value)
   const cursors = decodeCursor(request.nextUrl.searchParams.get('cursor'))
 
   try {
-    const feeds = await Promise.all(actors.map(actor => fetchActor(actor, cursors[actor] ?? null)))
+    const feeds = await Promise.all(actors.map(actor => fetchActor(actor, cursors[actor] ?? null, flowActors.has(actor.toLowerCase()))))
     const seen = new Set<string>()
     const posts: AnyObject[] = []
     const nextCursors: CursorMap = {}
