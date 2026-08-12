@@ -5,6 +5,7 @@ import './mixed-media.css'
 import './video-layout.css'
 import './viewer.css'
 import MediaViewer from './MediaViewer'
+import AccountNames from './AccountNames'
 
 export const metadata: Metadata = {
   title: 'Recherche visuelle',
@@ -16,6 +17,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html lang="fr">
       <body>
         {children}
+        <AccountNames />
         <MediaViewer />
       </body>
     </html>
