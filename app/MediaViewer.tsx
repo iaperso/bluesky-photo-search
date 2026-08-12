@@ -6,11 +6,14 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 type MediaKind='image'|'video'
 type ViewerState={open:boolean;index:number;kind:MediaKind;src:string;poster:string|null;author:string|null}
 const ACCOUNTS_KEY='visual-search-accounts-v2'
+const FLOW_COOKIE='visual-search-flow-accounts'
 const MAX_ACCOUNTS=20
 
 function mediaCards(){return Array.from(document.querySelectorAll<HTMLElement>('.mediaViewerItem[data-media-kind][data-media-src]'))}
 function actorFromMedia(src:string){try{return decodeURIComponent(src).match(/did:plc:[a-z0-9]+/i)?.[0]??null}catch{return src.match(/did:plc:[a-z0-9]+/i)?.[0]??null}}
 function sourceForCard(card:HTMLElement){const src=card.dataset.mediaSrc||'';const kind=card.dataset.mediaKind==='video'?'video':'image';if(!src)return null;return{kind:kind as MediaKind,src,poster:card.dataset.mediaPoster||null,author:card.dataset.mediaAuthor||actorFromMedia(src)}}
+function getFlowAccounts(){try{const match=document.cookie.match(new RegExp(`(?:^|; )${FLOW_COOKIE}=([^;]*)`));if(!match)return[];return decodeURIComponent(match[1]).split(',').map(item=>item.trim().replace(/^@+/,'')) .filter(Boolean).slice(0,MAX_ACCOUNTS)}catch{return[]}}
+function saveFlowAccounts(accounts:string[]){try{document.cookie=`${FLOW_COOKIE}=${encodeURIComponent(accounts.join(','))}; path=/; max-age=31536000; samesite=lax`}catch{}}
 
 export default function MediaViewer(){
  const[state,setState]=useState<ViewerState>({open:false,index:-1,kind:'image',src:'',poster:null,author:null})
@@ -41,6 +44,8 @@ export default function MediaViewer(){
    const saved=JSON.parse(localStorage.getItem(ACCOUNTS_KEY)??'[]')
    const current=Array.isArray(saved)?saved.filter((item):item is string=>typeof item==='string'):[]
    if(!current.includes(finalAuthor)&&current.length<MAX_ACCOUNTS){const next=[...current,finalAuthor];localStorage.setItem(ACCOUNTS_KEY,JSON.stringify(next));window.dispatchEvent(new CustomEvent('visual-search-accounts-changed',{detail:next}))}
+   const flowedAccounts=getFlowAccounts()
+   if(!flowedAccounts.includes(finalAuthor))saveFlowAccounts([...flowedAccounts,finalAuthor].slice(0,MAX_ACCOUNTS))
    setFlowed(true)
   }catch{}
  }
