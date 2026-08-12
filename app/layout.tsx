@@ -6,6 +6,7 @@ import './video-layout.css'
 import './viewer.css'
 import './premium-header.css'
 import './flow-premium.css'
+import './watermark.css'
 import MediaViewer from './MediaViewer'
 
 export const metadata: Metadata = {
