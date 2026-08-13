@@ -29,6 +29,12 @@ function extractVideo(embed: AnyObject | undefined) {
   }
 }
 
+function exactHandle(value: unknown) {
+  if (typeof value !== 'string') return 'auteur'
+  const handle = value.trim().replace(/^@+/, '')
+  return handle || 'auteur'
+}
+
 function searchVariants(q: string) {
   const variants = new Set<string>([q])
   for (const raw of q.split(/\s+/)) {
@@ -96,12 +102,17 @@ export async function GET(request: NextRequest) {
         if (!video || seenPlaylists.has(video.playlist)) continue
         seenUris.add(post.uri)
         seenPlaylists.add(video.playlist)
+        const handle = exactHandle(post.author?.handle ?? post.author?.did)
         posts.push({
           uri: post.uri,
           cid: post.cid,
           text: '',
           createdAt: post.record?.createdAt ?? post.indexedAt,
-          author: { handle: 'auteur', displayName: 'auteur', avatar: null },
+          author: {
+            handle,
+            displayName: typeof post.author?.displayName === 'string' && post.author.displayName.trim() ? post.author.displayName.trim() : handle,
+            avatar: post.author?.avatar ?? null
+          },
           video,
           likeCount: post.likeCount ?? 0,
           repostCount: post.repostCount ?? 0
