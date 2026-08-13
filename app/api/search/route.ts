@@ -24,7 +24,8 @@ function cleanVisibleText(value: string | null | undefined) {
 }
 
 function cleanHandle(value: string | null | undefined) {
-  return cleanVisibleText(value).replace(/^@+/, '') || 'auteur'
+  const handle = (value ?? '').trim().replace(/^@+/, '')
+  return handle || 'auteur'
 }
 
 function hasAdultLabel(post: AnyObject) {
