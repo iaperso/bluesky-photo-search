@@ -74,15 +74,16 @@ export default function Home(){
  function confirmAdult(){try{localStorage.setItem(AGE_KEY,'yes')}catch{}setAdultConfirmed(true)}
 
  async function fetchDiscovery(nextMode:Mode){
-  if(nextMode==='accounts'||!seedQuery)return {posts:[] as Post[],cursor:null,hitsTotal:null}
-  const params=new URLSearchParams({kind:nextMode==='videos'?'video':'image',seeds:seedQuery})
+  if(nextMode==='accounts'||(nextMode!=='videos'&&!seedQuery))return {posts:[] as Post[],cursor:null,hitsTotal:null}
+  const params=new URLSearchParams({kind:nextMode==='videos'?'video':'image'})
+  if(seedQuery)params.set('seeds',seedQuery)
   const response=await fetch(`/api/discover?${params}`)
   if(!response.ok)return {posts:[] as Post[],cursor:null,hitsTotal:null}
   return await response.json() as SearchResponse
  }
 
  async function fetchFeed(nextQuery:string,nextCursor?:string|null,append=false,nextMode:Mode=mode,discoveryOnly=false){
-  const cleaned=nextQuery.trim();if(loadingRef.current)return;if(nextMode==='accounts'&&!cleaned)return;if(!cleaned&&nextMode!=='accounts'&&!seedQuery)return;if(append&&nextCursor&&lastCursorRef.current===nextCursor)return;loadingRef.current=true;if(append&&nextCursor)lastCursorRef.current=nextCursor;setLoading(true);setFailed(false)
+  const cleaned=nextQuery.trim();if(loadingRef.current)return;if(nextMode==='accounts'&&!cleaned)return;if(!cleaned&&nextMode!=='accounts'&&!seedQuery&&nextMode!=='videos')return;if(append&&nextCursor&&lastCursorRef.current===nextCursor)return;loadingRef.current=true;if(append&&nextCursor)lastCursorRef.current=nextCursor;setLoading(true);setFailed(false)
   try{
    let data:SearchResponse
    if(discoveryOnly||(!cleaned&&nextMode!=='accounts')) data=await fetchDiscovery(nextMode)
@@ -100,11 +101,11 @@ export default function Home(){
   }catch{setFailed(true);lastCursorRef.current=null;if(!append){setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null)}}finally{loadingRef.current=false;setLoading(false)}
  }
 
- useEffect(()=>{if(!ageChecked||!accounts.length||mode==='accounts'||activeQuery||loadingRef.current)return;void fetchFeed('',null,false,mode,true)},[ageChecked,accounts.length,mode,activeQuery])
+ useEffect(()=>{if(!ageChecked||mode==='accounts'||activeQuery||loadingRef.current)return;if(mode!=='videos'&&!accounts.length)return;void fetchFeed('',null,false,mode,true)},[ageChecked,accounts.length,mode,activeQuery])
  useEffect(()=>{const target=infiniteSentinel.current;if(!target||!cursor||!activeQuery||activeQuery===DISCOVERY_QUERY)return;const observer=new IntersectionObserver(entries=>{if(!entries[0]?.isIntersecting||loadingRef.current)return;const q=mode==='accounts'?accountsQuery:activeQuery;if(q)fetchFeed(q,cursor,true,mode)},{rootMargin:'1800px 0px 1800px 0px',threshold:0});observer.observe(target);return()=>observer.disconnect()},[cursor,activeQuery,mode,accountsQuery,posts,displayVideos,displayImages,displayMedia])
  function submit(e:FormEvent){e.preventDefault();lastCursorRef.current=null;if(mode==='accounts'){const account=cleanAccount(query);if(!account||accounts.includes(account)||accounts.length>=MAX_ACCOUNTS)return;const next=[...accounts,account];saveAccounts(next);setQuery('');fetchFeed(next.map(x=>`@${x}`).join(','),null,false,'accounts');return}if(query.trim())fetchFeed(query)}
- function switchMode(nextMode:Mode){if(nextMode===mode||loadingRef.current)return;lastCursorRef.current=null;setMode(nextMode);setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');setFailed(false);setQuery('');if(nextMode==='accounts'&&accounts.length)setTimeout(()=>fetchFeed(accounts.map(x=>`@${x}`).join(','),null,false,'accounts'),0);else if(nextMode!=='accounts'&&accounts.length)setTimeout(()=>fetchFeed('',null,false,nextMode,true),0)}
- function removeAccount(account:string){const next=accounts.filter(x=>x!==account);saveAccounts(next);lastCursorRef.current=null;setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');if(mode==='accounts'&&next.length)setTimeout(()=>fetchFeed(next.map(x=>`@${x}`).join(','),null,false,'accounts'),0);else if(mode!=='accounts'&&next.length)setTimeout(()=>fetchFeed('',null,false,mode,true),0)}
+ function switchMode(nextMode:Mode){if(nextMode===mode||loadingRef.current)return;lastCursorRef.current=null;setMode(nextMode);setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');setFailed(false);setQuery('');if(nextMode==='accounts'&&accounts.length)setTimeout(()=>fetchFeed(accounts.map(x=>`@${x}`).join(','),null,false,'accounts'),0);else if(nextMode==='videos'||(nextMode!=='accounts'&&accounts.length))setTimeout(()=>fetchFeed('',null,false,nextMode,true),0)}
+ function removeAccount(account:string){const next=accounts.filter(x=>x!==account);saveAccounts(next);lastCursorRef.current=null;setPosts([]);setDisplayImages([]);setDisplayVideos([]);setDisplayMedia([]);setCursor(null);setActiveQuery('');if(mode==='accounts'&&next.length)setTimeout(()=>fetchFeed(next.map(x=>`@${x}`).join(','),null,false,'accounts'),0);else if(mode==='videos'||(mode!=='accounts'&&next.length))setTimeout(()=>fetchFeed('',null,false,mode,true),0)}
  const hasResults=mode==='videos'?displayVideos.length>0:mode==='accounts'?displayMedia.length>0:displayImages.length>0
  const iconStyle={width:19,height:19,fill:'none',stroke:'currentColor',strokeWidth:2.05,strokeLinecap:'round' as const,strokeLinejoin:'round' as const,opacity:.94}
 
