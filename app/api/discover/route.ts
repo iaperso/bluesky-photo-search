@@ -6,6 +6,7 @@ type Kind = 'image' | 'video'
 const HOSTS = ['https://public.api.bsky.app', 'https://api.bsky.app']
 const ADULT_LABELS = new Set(['porn', 'sexual'])
 const REQUEST_TIMEOUT_MS = 4500
+const DEFAULT_VIDEO_QUERIES = ['nsfw', '#nsfw', 'adult', '#adult', '18+']
 
 function parseSeeds(value: string | null) {
   return [...new Set((value ?? '').split(/[\s,;]+/).map(v => v.trim().replace(/^@+/, '').toLowerCase()).filter(Boolean))].slice(0, 12)
@@ -71,10 +72,60 @@ function weightedShuffle<T extends { affinity: number }>(items: T[]) {
     .map(entry => entry.item)
 }
 
+async function defaultVideoFeed() {
+  const pages = await Promise.all(DEFAULT_VIDEO_QUERIES.map(async q => {
+    const params = new URLSearchParams({ q, sort: 'latest', limit: '100' })
+    return xrpc('app.bsky.feed.searchPosts', params)
+  }))
+
+  const seenUris = new Set<string>()
+  const seenPlaylists = new Set<string>()
+  const collected: AnyObject[] = []
+
+  for (const data of pages) {
+    for (const post of Array.isArray(data?.posts) ? data.posts : []) {
+      if (!post?.uri || seenUris.has(post.uri) || !hasAdultLabel(post)) continue
+      const video = extractVideo(post.embed)
+      if (!video || seenPlaylists.has(video.playlist)) continue
+      seenUris.add(post.uri)
+      seenPlaylists.add(video.playlist)
+      collected.push({
+        uri: post.uri,
+        cid: post.cid,
+        text: '',
+        createdAt: post.record?.createdAt ?? post.indexedAt,
+        author: {
+          handle: post.author?.handle ?? 'auteur',
+          displayName: post.author?.displayName ?? post.author?.handle ?? 'auteur',
+          avatar: post.author?.avatar ?? null
+        },
+        video,
+        likeCount: post.likeCount ?? 0,
+        repostCount: post.repostCount ?? 0,
+        discoveryScore: Math.log1p((post.likeCount ?? 0) + (post.repostCount ?? 0) * 2) + Math.random() * 5
+      })
+    }
+  }
+
+  return collected
+    .sort((a, b) => b.discoveryScore - a.discoveryScore)
+    .slice(0, 24)
+    .map(({ discoveryScore: _score, ...post }) => post)
+}
+
 export async function GET(request: NextRequest) {
   const kind: Kind = request.nextUrl.searchParams.get('kind') === 'video' ? 'video' : 'image'
   const seeds = parseSeeds(request.nextUrl.searchParams.get('seeds'))
-  if (!seeds.length) return NextResponse.json({ posts: [], cursor: null, hitsTotal: null })
+
+  if (!seeds.length) {
+    if (kind !== 'video') return NextResponse.json({ posts: [], cursor: null, hitsTotal: null })
+    try {
+      const posts = await defaultVideoFeed()
+      return NextResponse.json({ posts, cursor: null, hitsTotal: null }, { headers: { 'Cache-Control': 'public, s-maxage=20, stale-while-revalidate=45' } })
+    } catch {
+      return NextResponse.json({ posts: [], cursor: null, hitsTotal: null })
+    }
+  }
 
   try {
     const seedSet = new Set(seeds)
