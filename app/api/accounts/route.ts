@@ -10,17 +10,16 @@ const FLOW_COOKIE = 'visual-search-flow-accounts'
 function cleanVisibleText(value: string | null | undefined) {
   return (value ?? '')
     .replace(/https?:\/\/(?:www\.)?bsky\.app\/\S*/gi, '')
-    .replace(/\.bsky\.social/gi, '')
     .replace(/blue\s*sky/gi, '')
     .replace(/bluesky/gi, '')
     .replace(/bsky\.app/gi, '')
-    .replace(/bsky/gi, '')
     .replace(/\s{2,}/g, ' ')
     .trim()
 }
 
-function cleanHandle(value: string | null | undefined) {
-  return cleanVisibleText(value).replace(/^@+/, '') || 'auteur'
+function exactHandle(value: string | null | undefined) {
+  const handle = (value ?? '').trim().replace(/^@+/, '')
+  return handle || 'auteur'
 }
 
 function hasAdultLabel(post: AnyObject) {
@@ -39,21 +38,13 @@ function extractImages(embed: AnyObject | undefined) {
 
   if (Array.isArray(source.images)) {
     return source.images
-      .map((image: AnyObject) => ({
-        thumb: image.thumb,
-        fullsize: image.fullsize,
-        alt: cleanVisibleText(image.alt)
-      }))
+      .map((image: AnyObject) => ({ thumb: image.thumb, fullsize: image.fullsize, alt: cleanVisibleText(image.alt) }))
       .filter((image: AnyObject) => image.thumb && image.fullsize)
   }
 
   if (Array.isArray(source.items)) {
     return source.items
-      .map((image: AnyObject) => ({
-        thumb: image.thumbnail ?? image.thumb,
-        fullsize: image.fullsize,
-        alt: cleanVisibleText(image.alt)
-      }))
+      .map((image: AnyObject) => ({ thumb: image.thumbnail ?? image.thumb, fullsize: image.fullsize, alt: cleanVisibleText(image.alt) }))
       .filter((image: AnyObject) => image.thumb && image.fullsize)
   }
 
@@ -79,13 +70,11 @@ function extractVideo(embed: AnyObject | undefined) {
 
 function normalizePost(post: AnyObject, feedIndexedAt?: string | null, allowUnlabeled = false) {
   if (!allowUnlabeled && !hasAdultLabel(post)) return null
-
   const images = extractImages(post.embed)
   const video = extractVideo(post.embed)
   if (!images.length && !video) return null
 
-  const rawHandle = post.author?.handle ?? post.author?.did ?? 'auteur'
-  const handle = cleanHandle(rawHandle)
+  const handle = exactHandle(post.author?.handle ?? post.author?.did)
   const displayName = cleanVisibleText(post.author?.displayName) || handle
   const feedTime = feedIndexedAt ?? post.indexedAt ?? post.record?.createdAt
 
@@ -95,11 +84,7 @@ function normalizePost(post: AnyObject, feedIndexedAt?: string | null, allowUnla
     text: cleanVisibleText(post.record?.text),
     createdAt: feedTime,
     indexedAt: feedTime,
-    author: {
-      handle,
-      displayName,
-      avatar: post.author?.avatar ?? null
-    },
+    author: { handle, displayName, avatar: post.author?.avatar ?? null },
     images,
     video,
     likeCount: post.likeCount ?? 0,
@@ -110,45 +95,27 @@ function normalizePost(post: AnyObject, feedIndexedAt?: string | null, allowUnla
 async function xrpc(path: string, params: URLSearchParams) {
   let lastStatus = 502
   let lastDetails = ''
-
   for (const host of HOSTS) {
     const response = await fetch(`${host}/xrpc/${path}?${params.toString()}`, {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
-      },
+      headers: { Accept: 'application/json', 'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)', 'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8' },
       cache: 'no-store'
     })
-
     if (response.ok) return { data: await response.json(), status: 200, details: '' }
     lastStatus = response.status
     lastDetails = await response.text()
     if (response.status !== 403 && response.status !== 429 && response.status < 500) break
   }
-
   return { data: null, status: lastStatus, details: lastDetails }
 }
 
 function parseActors(value: string) {
-  return [...new Set(
-    value
-      .split(/[\s,;]+/)
-      .map(item => item.trim().replace(/^@+/, ''))
-      .filter(Boolean)
-  )].slice(0, 20)
+  return [...new Set(value.split(/[\s,;]+/).map(item => item.trim()).filter(Boolean).map(item => `@${item.replace(/^@+/, '')}`))].slice(0, 20)
 }
 
 function parseFlowActors(value: string | undefined) {
   if (!value) return new Set<string>()
   try {
-    return new Set(
-      decodeURIComponent(value)
-        .split(',')
-        .map(item => item.trim().replace(/^@+/, '').toLowerCase())
-        .filter(Boolean)
-        .slice(0, 20)
-    )
+    return new Set(decodeURIComponent(value).split(',').map(item => exactHandle(item).toLowerCase()).filter(Boolean).slice(0, 20))
   } catch {
     return new Set<string>()
   }
@@ -156,11 +123,7 @@ function parseFlowActors(value: string | undefined) {
 
 function decodeCursor(value: string | null): CursorMap {
   if (!value) return {}
-  try {
-    return JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as CursorMap
-  } catch {
-    return {}
-  }
+  try { return JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as CursorMap } catch { return {} }
 }
 
 function encodeCursor(value: CursorMap) {
@@ -172,7 +135,6 @@ function encodeCursor(value: CursorMap) {
 async function fetchActor(actor: string, cursor: string | null, allowUnlabeled: boolean) {
   const params = new URLSearchParams({ actor, limit: '100', filter: 'posts_with_media', includePins: 'false' })
   if (cursor) params.set('cursor', cursor)
-
   const result = await xrpc('app.bsky.feed.getAuthorFeed', params)
   if (!result.data) return { actor, posts: [] as AnyObject[], cursor: null as string | null }
 
@@ -180,11 +142,7 @@ async function fetchActor(actor: string, cursor: string | null, allowUnlabeled: 
     .map((item: AnyObject) => {
       const post = item?.post
       if (!post) return null
-      const feedIndexedAt = typeof item?.reason?.indexedAt === 'string'
-        ? item.reason.indexedAt
-        : typeof post.indexedAt === 'string'
-          ? post.indexedAt
-          : null
+      const feedIndexedAt = typeof item?.reason?.indexedAt === 'string' ? item.reason.indexedAt : typeof post.indexedAt === 'string' ? post.indexedAt : null
       return normalizePost(post, feedIndexedAt, allowUnlabeled)
     })
     .filter(Boolean) as AnyObject[]
@@ -201,7 +159,10 @@ export async function GET(request: NextRequest) {
   const cursors = decodeCursor(request.nextUrl.searchParams.get('cursor'))
 
   try {
-    const feeds = await Promise.all(actors.map(actor => fetchActor(actor, cursors[actor] ?? null, flowActors.has(actor.toLowerCase()))))
+    const feeds = await Promise.all(actors.map(actor => {
+      const plain = exactHandle(actor)
+      return fetchActor(actor, cursors[actor] ?? null, flowActors.has(plain.toLowerCase()))
+    }))
     const seen = new Set<string>()
     const posts: AnyObject[] = []
     const nextCursors: CursorMap = {}
@@ -216,11 +177,7 @@ export async function GET(request: NextRequest) {
     }
 
     posts.sort((a, b) => Date.parse(b.createdAt ?? b.indexedAt ?? '') - Date.parse(a.createdAt ?? a.indexedAt ?? ''))
-
-    return NextResponse.json({
-      posts,
-      cursor: encodeCursor(nextCursors)
-    })
+    return NextResponse.json({ posts, cursor: encodeCursor(nextCursors) })
   } catch {
     return NextResponse.json({ error: 'Impossible de charger ces comptes.' }, { status: 502 })
   }
