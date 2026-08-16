@@ -8,7 +8,13 @@ type SearchResult = {
   hitsTotal: number | null
 }
 
-const HOSTS = ['https://public.api.bsky.app', 'https://api.bsky.app']
+type XrpcResult = {
+  data: AnyObject | null
+  status: number
+  details: string
+}
+
+const HOSTS = ['https://api.bsky.app', 'https://public.api.bsky.app']
 const ADULT_LABELS = new Set(['porn', 'sexual'])
 
 function cleanVisibleText(value: string | null | undefined) {
@@ -132,7 +138,7 @@ function newestBoundary(boundaries: Array<string | null>) {
   return valid.reduce((latest, value) => Date.parse(value) > Date.parse(latest) ? value : latest)
 }
 
-async function xrpc(path: string, params: URLSearchParams) {
+async function xrpc(path: string, params: URLSearchParams): Promise<XrpcResult> {
   let lastStatus = 502
   let lastDetails = ''
 
@@ -140,7 +146,6 @@ async function xrpc(path: string, params: URLSearchParams) {
     const response = await fetch(`${host}/xrpc/${path}?${params.toString()}`, {
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)',
         'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
       },
       cache: 'no-store'
@@ -157,6 +162,65 @@ async function xrpc(path: string, params: URLSearchParams) {
   }
 
   return { data: null, status: lastStatus, details: lastDetails }
+}
+
+async function hydratePostUris(uris: string[]): Promise<XrpcResult> {
+  const posts: AnyObject[] = []
+
+  for (let index = 0; index < uris.length; index += 25) {
+    const params = new URLSearchParams()
+    for (const uri of uris.slice(index, index + 25)) params.append('uris', uri)
+
+    const result = await xrpc('app.bsky.feed.getPosts', params)
+    if (!result.data) return result
+
+    if (Array.isArray(result.data.posts)) posts.push(...result.data.posts)
+  }
+
+  return { data: { posts }, status: 200, details: '' }
+}
+
+async function searchPosts(params: URLSearchParams): Promise<XrpcResult> {
+  const regular = await xrpc('app.bsky.feed.searchPosts', params)
+  if (regular.data) return regular
+
+  const skeleton = await xrpc('app.bsky.unspecced.searchPostsSkeleton', params)
+  if (!skeleton.data) {
+    return skeleton.status === 200 ? regular : skeleton
+  }
+
+  const uris = (Array.isArray(skeleton.data.posts) ? skeleton.data.posts : [])
+    .map((post: AnyObject) => post?.uri)
+    .filter((uri: unknown): uri is string => typeof uri === 'string' && uri.startsWith('at://'))
+
+  if (!uris.length) {
+    return {
+      data: {
+        posts: [],
+        cursor: skeleton.data.cursor ?? null,
+        hitsTotal: typeof skeleton.data.hitsTotal === 'number' ? skeleton.data.hitsTotal : null
+      },
+      status: 200,
+      details: ''
+    }
+  }
+
+  const hydrated = await hydratePostUris(uris)
+  if (!hydrated.data) return hydrated
+
+  const order = new Map(uris.map((uri, index) => [uri, index]))
+  const hydratedPosts = (Array.isArray(hydrated.data.posts) ? hydrated.data.posts : [])
+    .sort((a: AnyObject, b: AnyObject) => (order.get(a?.uri) ?? Number.MAX_SAFE_INTEGER) - (order.get(b?.uri) ?? Number.MAX_SAFE_INTEGER))
+
+  return {
+    data: {
+      posts: hydratedPosts,
+      cursor: skeleton.data.cursor ?? null,
+      hitsTotal: typeof skeleton.data.hitsTotal === 'number' ? skeleton.data.hitsTotal : null
+    },
+    status: 200,
+    details: ''
+  }
 }
 
 async function authorPhotos(actor: string, adultOnly: boolean, cursor?: string | null, limit = 100) {
@@ -252,7 +316,7 @@ export async function GET(request: NextRequest) {
       const results = await Promise.all(searchVariants.map(searchQuery => {
         const params = new URLSearchParams({ q: searchQuery, sort, limit: '100' })
         if (until) params.set('until', until)
-        return xrpc('app.bsky.feed.searchPosts', params)
+        return searchPosts(params)
       }))
 
       const successful = results.filter(result => result.data)
@@ -264,7 +328,7 @@ export async function GET(request: NextRequest) {
         )
       }
 
-      if (hitsTotal === null && typeof successful[0].data.hitsTotal === 'number') {
+      if (hitsTotal === null && typeof successful[0].data?.hitsTotal === 'number') {
         hitsTotal = successful[0].data.hitsTotal
       }
 
@@ -272,7 +336,7 @@ export async function GET(request: NextRequest) {
       let foundRawPosts = false
 
       for (const result of successful) {
-        const rawPosts: AnyObject[] = Array.isArray(result.data.posts) ? result.data.posts : []
+        const rawPosts: AnyObject[] = Array.isArray(result.data?.posts) ? result.data.posts : []
         if (!rawPosts.length) continue
 
         foundRawPosts = true
