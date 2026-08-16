@@ -9,6 +9,7 @@ type SearchResult = {
 }
 
 const HOSTS = ['https://api.bsky.app', 'https://public.api.bsky.app']
+const RELAY_ORIGIN = 'https://ia-perso.vercel.app'
 const ADULT_LABELS = new Set(['porn', 'sexual'])
 
 function cleanVisibleText(value: string | null | undefined) {
@@ -158,6 +159,33 @@ async function xrpc(path: string, params: URLSearchParams) {
   return { data: null, status: lastStatus, details: lastDetails }
 }
 
+async function relaySearch(request: NextRequest) {
+  const incomingHost = request.headers.get('host')?.toLowerCase() ?? ''
+  const alreadyRelayed = request.headers.get('x-photo-search-relay') === '1'
+  if (alreadyRelayed || incomingHost.startsWith('ia-perso.')) return null
+
+  try {
+    const relayUrl = new URL('/api/search', RELAY_ORIGIN)
+    request.nextUrl.searchParams.forEach((value, key) => relayUrl.searchParams.append(key, value))
+    const response = await fetch(relayUrl, {
+      headers: {
+        Accept: 'application/json',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+        'x-photo-search-relay': '1'
+      },
+      cache: 'no-store'
+    })
+    if (!response.ok) return null
+    const payload = await response.json()
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: { 'x-photo-search-source': 'ia-perso-relay' }
+    })
+  } catch {
+    return null
+  }
+}
+
 async function authorPhotos(actor: string, adultOnly: boolean, cursor?: string | null, limit = 100) {
   const params = new URLSearchParams({ actor, limit: String(limit), filter: 'posts_with_media', includePins: 'false' })
   if (cursor) params.set('cursor', cursor)
@@ -211,6 +239,8 @@ export async function GET(request: NextRequest) {
       const result = await authorPhotos(directActor, adultOnly, actorCursor, 100)
 
       if (result.status !== 200) {
+        const relayed = await relaySearch(request)
+        if (relayed) return relayed
         return NextResponse.json(
           { error: `La recherche distante a échoué (${result.status}).`, details: result.details },
           { status: result.status }
@@ -256,6 +286,8 @@ export async function GET(request: NextRequest) {
 
       const successful = results.filter(result => result.data)
       if (!successful.length) {
+        const relayed = await relaySearch(request)
+        if (relayed) return relayed
         const failed = results[0]
         return NextResponse.json(
           { error: `La recherche distante a échoué (${failed.status}).`, details: failed.details },
@@ -302,6 +334,8 @@ export async function GET(request: NextRequest) {
       hitsTotal
     } satisfies SearchResult)
   } catch {
+    const relayed = await relaySearch(request)
+    if (relayed) return relayed
     return NextResponse.json(
       { error: 'Impossible de joindre le service de recherche pour le moment.' },
       { status: 502 }
