@@ -8,7 +8,7 @@ type SearchResult = {
   hitsTotal: number | null
 }
 
-const HOSTS = ['https://public.api.bsky.app', 'https://api.bsky.app']
+const HOSTS = ['https://api.bsky.app', 'https://public.api.bsky.app']
 const ADULT_LABELS = new Set(['porn', 'sexual'])
 
 function cleanVisibleText(value: string | null | undefined) {
@@ -140,7 +140,6 @@ async function xrpc(path: string, params: URLSearchParams) {
     const response = await fetch(`${host}/xrpc/${path}?${params.toString()}`, {
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'PublicPhotoSearch/1.0 (+https://vercel.app)',
         'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
       },
       cache: 'no-store'
