@@ -17,9 +17,7 @@ const ACCOUNTS_KEY='visual-search-accounts-v2'
 const MAX_ACCOUNTS=20
 const DISCOVERY_QUERY='__discovery__'
 
-function shuffle<T>(items:T[]){const copy=[...items];for(let i=copy.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[copy[i],copy[j]]=[copy[j],copy[i]]}return copy}
 function uniquePosts(posts:Post[]){const seen=new Set<string>();return posts.filter(post=>{if(seen.has(post.uri))return false;seen.add(post.uri);return true})}
-function byLikes(posts:Post[]){return [...posts].sort((a,b)=>(b.likeCount??0)-(a.likeCount??0))}
 function imageItems(posts:Post[]):DisplayImage[]{return posts.flatMap(post=>(post.images??[]).map((photo,index)=>({key:`${post.uri}-${index}`,photo,author:post.author.handle})))}
 function videoItems(posts:Post[]):DisplayVideo[]{const seen=new Set<string>();return posts.flatMap(post=>{if(!post.video||seen.has(post.video.playlist))return[];seen.add(post.video.playlist);return[{key:post.video.playlist,video:post.video,author:post.author.handle}]})}
 function mediaItems(posts:Post[]):DisplayMedia[]{const seenVideos=new Set<string>();return posts.flatMap(post=>{const media:DisplayMedia[]=(post.images??[]).map((photo,index)=>({key:`${post.uri}-image-${index}`,kind:'image' as const,photo,author:post.author.handle}));if(post.video&&!seenVideos.has(post.video.playlist)){seenVideos.add(post.video.playlist);media.push({key:post.video.playlist,kind:'video',video:post.video,author:post.author.handle})}return media})}
@@ -135,7 +133,7 @@ export default function Home(){
 
    if(nextMode==='videos'){
     const fresh=videoItems(newPosts)
-    setDisplayVideos(append?[...displayVideos,...shuffle(fresh)]:discoveryOnly||!cleaned?shuffle(videoItems(newPosts)):videoItems(byLikes(newPosts)))
+    setDisplayVideos(append?[...displayVideos,...fresh]:videoItems(newPosts))
     setDisplayImages([]);setDisplayMedia([])
    }else if(nextMode==='accounts'){
     const fresh=mediaItems(newPosts)
@@ -143,7 +141,7 @@ export default function Home(){
     setDisplayImages([]);setDisplayVideos([])
    }else{
     const fresh=imageItems(newPosts)
-    setDisplayImages(append?[...displayImages,...shuffle(fresh)]:discoveryOnly||!cleaned?shuffle(imageItems(newPosts)):imageItems(byLikes(newPosts)))
+    setDisplayImages(append?[...displayImages,...fresh]:imageItems(newPosts))
     setDisplayVideos([]);setDisplayMedia([])
    }
 
