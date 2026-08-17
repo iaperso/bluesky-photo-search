@@ -1,0 +1,4 @@
+/* Interaction fixes: keep the top controls sticky and preserve native image zoom gestures. */
+main{overflow-x:clip}
+.mediaViewer{touch-action:pan-x pan-y pinch-zoom}
+.mediaViewerImage{touch-action:pan-x pan-y pinch-zoom}

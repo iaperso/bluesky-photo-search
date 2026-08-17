@@ -7,6 +7,7 @@ import './viewer.css'
 import './premium-header.css'
 import './flow-premium.css'
 import './watermark.css'
+import './interaction-fixes.css'
 import MediaViewer from './MediaViewer'
 import AndroidVideoBridge from './AndroidVideoBridge'
 
