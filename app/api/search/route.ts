@@ -161,8 +161,9 @@ async function xrpc(path: string, params: URLSearchParams) {
 }
 
 async function relaySearch(request: NextRequest) {
-  const alreadyRelayed = request.headers.get('x-photo-search-relay') === '1'
-  if (alreadyRelayed) return null
+  const parsedDepth = Number.parseInt(request.headers.get('x-photo-search-relay') ?? '0', 10)
+  const relayDepth = Number.isFinite(parsedDepth) && parsedDepth >= 0 ? parsedDepth : 0
+  if (relayDepth >= 2) return null
 
   const incomingHost = request.headers.get('host')?.toLowerCase() ?? ''
   const relayOrigin = incomingHost.startsWith('ia-perso.') ? PHOTO_ORIGIN : IA_ORIGIN
@@ -174,7 +175,7 @@ async function relaySearch(request: NextRequest) {
       headers: {
         Accept: 'application/json',
         'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
-        'x-photo-search-relay': '1'
+        'x-photo-search-relay': String(relayDepth + 1)
       },
       cache: 'no-store'
     })
