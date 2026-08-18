@@ -4,6 +4,8 @@ type AnyObject = Record<string, any>
 type SearchResult = { posts: AnyObject[]; cursor: string | null; hitsTotal: number | null }
 
 const HOSTS = ['https://api.bsky.app', 'https://public.api.bsky.app']
+const PHOTO_ORIGIN = 'https://photo-search-xi-nine.vercel.app'
+const IA_ORIGIN = 'https://ia-perso.vercel.app'
 const ADULT_LABELS = new Set(['porn', 'sexual'])
 const REQUEST_TIMEOUT_MS = 4500
 const TARGET_RESULTS = 10
@@ -69,6 +71,37 @@ async function searchRemote(params: URLSearchParams) {
   return null
 }
 
+async function relayVideos(request: NextRequest) {
+  if (request.headers.get('x-photo-search-relay') === '1') return null
+
+  const incomingHost = request.headers.get('host')?.toLowerCase() ?? ''
+  const relayOrigin = incomingHost.startsWith('ia-perso.') ? PHOTO_ORIGIN : IA_ORIGIN
+
+  try {
+    const relayUrl = new URL('/api/videos', relayOrigin)
+    request.nextUrl.searchParams.forEach((value, key) => relayUrl.searchParams.append(key, value))
+    const response = await fetch(relayUrl, {
+      headers: {
+        Accept: 'application/json',
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+        'x-photo-search-relay': '1'
+      },
+      cache: 'no-store'
+    })
+    if (!response.ok) return null
+    const payload = await response.json()
+    return NextResponse.json(payload, {
+      status: 200,
+      headers: {
+        'Cache-Control': 'public, s-maxage=20, stale-while-revalidate=60',
+        'x-photo-search-source': 'peer-relay'
+      }
+    })
+  } catch {
+    return null
+  }
+}
+
 export async function GET(request: NextRequest) {
   const q = request.nextUrl.searchParams.get('q')?.trim()
   const requestedCursor = request.nextUrl.searchParams.get('cursor')?.trim() || null
@@ -91,6 +124,8 @@ export async function GET(request: NextRequest) {
     const successful = pages.filter(Boolean)
     if (!successful.length) {
       if (posts.length) break
+      const relayed = await relayVideos(request)
+      if (relayed) return relayed
       return NextResponse.json({ error: 'distante' }, { status: 502 })
     }
 
