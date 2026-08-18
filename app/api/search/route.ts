@@ -9,7 +9,8 @@ type SearchResult = {
 }
 
 const HOSTS = ['https://api.bsky.app', 'https://public.api.bsky.app']
-const RELAY_ORIGIN = 'https://ia-perso.vercel.app'
+const PHOTO_ORIGIN = 'https://photo-search-xi-nine.vercel.app'
+const IA_ORIGIN = 'https://ia-perso.vercel.app'
 const ADULT_LABELS = new Set(['porn', 'sexual'])
 
 function cleanVisibleText(value: string | null | undefined) {
@@ -160,12 +161,14 @@ async function xrpc(path: string, params: URLSearchParams) {
 }
 
 async function relaySearch(request: NextRequest) {
-  const incomingHost = request.headers.get('host')?.toLowerCase() ?? ''
   const alreadyRelayed = request.headers.get('x-photo-search-relay') === '1'
-  if (alreadyRelayed || incomingHost.startsWith('ia-perso.')) return null
+  if (alreadyRelayed) return null
+
+  const incomingHost = request.headers.get('host')?.toLowerCase() ?? ''
+  const relayOrigin = incomingHost.startsWith('ia-perso.') ? PHOTO_ORIGIN : IA_ORIGIN
 
   try {
-    const relayUrl = new URL('/api/search', RELAY_ORIGIN)
+    const relayUrl = new URL('/api/search', relayOrigin)
     request.nextUrl.searchParams.forEach((value, key) => relayUrl.searchParams.append(key, value))
     const response = await fetch(relayUrl, {
       headers: {
@@ -179,7 +182,7 @@ async function relaySearch(request: NextRequest) {
     const payload = await response.json()
     return NextResponse.json(payload, {
       status: 200,
-      headers: { 'x-photo-search-source': 'ia-perso-relay' }
+      headers: { 'x-photo-search-source': 'peer-relay' }
     })
   } catch {
     return null
