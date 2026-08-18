@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 type AnyObject = Record<string, any>
 type SearchResult = { posts: AnyObject[]; cursor: string | null; hitsTotal: number | null }
 
-const HOSTS = ['https://public.api.bsky.app', 'https://api.bsky.app']
+const HOSTS = ['https://api.bsky.app', 'https://public.api.bsky.app']
 const ADULT_LABELS = new Set(['porn', 'sexual'])
 const REQUEST_TIMEOUT_MS = 4500
 const TARGET_RESULTS = 10
@@ -52,7 +52,10 @@ async function searchRemote(params: URLSearchParams) {
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
       const response = await fetch(`${host}/xrpc/app.bsky.feed.searchPosts?${params.toString()}`, {
-        headers: { Accept: 'application/json', 'User-Agent': 'VisualMediaSearch/1.0' },
+        headers: {
+          Accept: 'application/json',
+          'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
+        },
         cache: 'no-store',
         signal: controller.signal
       })
