@@ -161,23 +161,28 @@ async function xrpc(path: string, params: URLSearchParams) {
 }
 
 async function relaySearch(request: NextRequest) {
-  const parsedDepth = Number.parseInt(request.headers.get('x-photo-search-relay') ?? '0', 10)
-  const relayDepth = Number.isFinite(parsedDepth) && parsedDepth >= 0 ? parsedDepth : 0
-  if (relayDepth >= 2) return null
+  // The peer can receive this route from a different Vercel egress path where Bluesky is reachable.
+  // Use a query marker instead of the old relay header: the peer ignores unknown query params,
+  // while a reciprocal fallback preserves the marker and is therefore stopped here.
+  if (request.nextUrl.searchParams.get('_ia_peer') === '1') return null
 
   const incomingHost = request.headers.get('host')?.toLowerCase() ?? ''
   const relayOrigin = incomingHost.startsWith('ia-perso.') ? PHOTO_ORIGIN : IA_ORIGIN
 
   try {
     const relayUrl = new URL('/api/search', relayOrigin)
-    request.nextUrl.searchParams.forEach((value, key) => relayUrl.searchParams.append(key, value))
+    request.nextUrl.searchParams.forEach((value, key) => {
+      if (key !== '_ia_peer') relayUrl.searchParams.append(key, value)
+    })
+    relayUrl.searchParams.set('_ia_peer', '1')
+
     const response = await fetch(relayUrl, {
       headers: {
         Accept: 'application/json',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
-        'x-photo-search-relay': String(relayDepth + 1)
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
       },
-      cache: 'no-store'
+      cache: 'no-store',
+      signal: AbortSignal.timeout(8000)
     })
     if (!response.ok) return null
     const payload = await response.json()
