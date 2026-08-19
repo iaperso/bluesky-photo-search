@@ -7,7 +7,6 @@ const HOSTS = ['https://api.bsky.app', 'https://public.api.bsky.app']
 const PHOTO_ORIGIN = 'https://photo-search-xi-nine.vercel.app'
 const IA_ORIGIN = 'https://ia-perso.vercel.app'
 const ADULT_LABELS = new Set(['porn', 'sexual'])
-const REQUEST_TIMEOUT_MS = 4500
 const TARGET_RESULTS = 10
 const MAX_SCANS = 3
 const BSKY_USER_AGENT = 'Mozilla/5.0 (compatible; VisualSearch/1.0; +https://ia-perso.vercel.app)'
@@ -51,8 +50,6 @@ function searchVariants(q: string) {
 
 async function searchRemote(params: URLSearchParams) {
   for (const host of HOSTS) {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
     try {
       const response = await fetch(`${host}/xrpc/app.bsky.feed.searchPosts?${params.toString()}`, {
         headers: {
@@ -60,14 +57,11 @@ async function searchRemote(params: URLSearchParams) {
           'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
           'User-Agent': BSKY_USER_AGENT
         },
-        cache: 'no-store',
-        signal: controller.signal
+        cache: 'no-store'
       })
       if (response.ok) return await response.json()
     } catch {
       // Try the fallback host.
-    } finally {
-      clearTimeout(timer)
     }
   }
   return null
