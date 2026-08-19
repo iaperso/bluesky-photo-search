@@ -10,6 +10,7 @@ import './watermark.css'
 import './interaction-fixes.css'
 import MediaViewer from './MediaViewer'
 import AndroidVideoBridge from './AndroidVideoBridge'
+import BrowserSearchFallback from './BrowserSearchFallback'
 
 export const metadata: Metadata = {
   title: 'VISUAL SEARCH',
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
   return (
     <html lang="fr">
       <body>
+        <BrowserSearchFallback />
         {children}
         <AndroidVideoBridge />
         <MediaViewer />
