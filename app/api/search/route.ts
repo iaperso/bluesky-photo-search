@@ -12,6 +12,7 @@ const HOSTS = ['https://api.bsky.app', 'https://public.api.bsky.app']
 const PHOTO_ORIGIN = 'https://photo-search-xi-nine.vercel.app'
 const IA_ORIGIN = 'https://ia-perso.vercel.app'
 const ADULT_LABELS = new Set(['porn', 'sexual'])
+const BSKY_USER_AGENT = 'Mozilla/5.0 (compatible; VisualSearch/1.0; +https://ia-perso.vercel.app)'
 
 function cleanVisibleText(value: string | null | undefined) {
   return (value ?? '')
@@ -142,7 +143,8 @@ async function xrpc(path: string, params: URLSearchParams) {
     const response = await fetch(`${host}/xrpc/${path}?${params.toString()}`, {
       headers: {
         Accept: 'application/json',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+        'User-Agent': BSKY_USER_AGENT
       },
       cache: 'no-store'
     })
@@ -161,9 +163,6 @@ async function xrpc(path: string, params: URLSearchParams) {
 }
 
 async function relaySearch(request: NextRequest) {
-  // The peer can receive this route from a different Vercel egress path where Bluesky is reachable.
-  // Use a query marker instead of the old relay header: the peer ignores unknown query params,
-  // while a reciprocal fallback preserves the marker and is therefore stopped here.
   if (request.nextUrl.searchParams.get('_ia_peer') === '1') return null
 
   const incomingHost = request.headers.get('host')?.toLowerCase() ?? ''
@@ -179,7 +178,8 @@ async function relaySearch(request: NextRequest) {
     const response = await fetch(relayUrl, {
       headers: {
         Accept: 'application/json',
-        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8'
+        'Accept-Language': 'fr-FR,fr;q=0.9,en;q=0.8',
+        'User-Agent': BSKY_USER_AGENT
       },
       cache: 'no-store',
       signal: AbortSignal.timeout(8000)
